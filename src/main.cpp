@@ -23,6 +23,8 @@ static constexpr uint32_t MSP_BAUD = 115200;
 static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0;
 static bool recordMapInitialized = false;
 static bool lastAppliedRecordState = false;
+static bool recordStopPending = false;
+static uint32_t recordOffSince = 0;
 static bool lastControlReady = false;
 static String lastGoProRcTarget;
 static uint32_t wifiStartedAt = 0;
@@ -175,7 +177,13 @@ void loop() {
     if(now-lastApiRequest>=5000){ lastApiRequest=now; msp.requestApiVersion(); }
 
     bool mappingValid = false;
-    const bool desiredRecordState = recordSwitchState(mappingValid);
+    const bool switchOn = recordSwitchState(mappingValid);
+    // Hold REC for the stop delay after the switch turns off. Turning it back on within the
+    // delay just cancels the pending STOP, so the current clip continues instead of a new one.
+    if (switchOn) recordStopPending = false;
+    else if (mappingValid && !recordStopPending && lastAppliedRecordState) { recordStopPending = true; recordOffSince = now; }
+    const bool holdingRec = recordStopPending && now - recordOffSince < (uint32_t)settings.recordStopDelaySec * 1000UL;
+    const bool desiredRecordState = switchOn || holdingRec;
     const CameraState& c = camera.state();
 
     // When the camera control link comes back, re-apply the physical switch position once.
