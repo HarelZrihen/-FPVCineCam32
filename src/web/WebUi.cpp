@@ -13,7 +13,7 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 <h1>FPVCineCam32</h1><div class=sub>Camera control + Betaflight MSP</div>
 
 <div class=card><h3>Camera system</h3>
-<select id=selectedCamera aria-label="Camera"><option value=blackmagic>Blackmagic Pocket Cinema Camera 4K</option><option value=gopro>GoPro</option><option value=dji>DJI Osmo Action</option></select>
+<select id=selectedCamera aria-label="Camera"><option value=blackmagic>Blackmagic Pocket Cinema Camera 4K</option><option value=gopro>GoPro</option><option value=dji>DJI Osmo Action 4/5 Pro/6/360</option><option value=dji2>DJI Osmo Action 2</option></select>
 <button id=saveCamera onclick=saveCamera()>Save &amp; Restart</button>
 <p id=cameraSaveStatus class=muted role=status></p>
 <p id=restartHelp class=muted hidden>Reconnect to FPVCineCam32 Wi-Fi if required, then reopen this page.</p>
@@ -134,7 +134,7 @@ async function refresh(){
       if(!cameraSelectionLoaded){el('selectedCamera').value=s.selectedCamera;cameraSelectionLoaded=true;}
       const blackmagic=s.selectedCamera==='blackmagic';
       el('blackmagicControls').disabled=!blackmagic;el('blackmagicControls').hidden=!blackmagic;el('blackmagicTitle').hidden=!blackmagic;el('blackmagicCard').hidden=!blackmagic;
-      el('goproCard').hidden=s.selectedCamera!=='gopro';el('djiCard').hidden=s.selectedCamera!=='dji';
+      el('goproCard').hidden=s.selectedCamera!=='gopro';el('djiCard').hidden=!s.selectedCamera.startsWith('dji');
       const djiRecording=s.dji&&s.dji.recording;el('saveCamera').disabled=s.camera.recording||s.camera.waitingPin||djiRecording;
     }
     if(s.gopro)drawGoPro(s.gopro);if(s.dji)drawDji(s.dji);
@@ -185,7 +185,7 @@ String WebUi::statusJson(){
 
 bool WebUi::cameraAvailable(){if(s.selectedCamera=="blackmagic"&&!restartRequested)return true;server.send(409,"application/json","{\"ok\":false}");return false;}
 bool WebUi::goProAvailable(){if(gp&&s.selectedCamera=="gopro"&&!restartRequested)return true;server.send(409,"application/json","{\"ok\":false}");return false;}
-bool WebUi::djiAvailable(){if(dji&&s.selectedCamera=="dji"&&!restartRequested)return true;server.send(409,"application/json","{\"ok\":false}");return false;}
+bool WebUi::djiAvailable(){if(dji&&s.selectedCamera.startsWith("dji")&&!restartRequested)return true;server.send(409,"application/json","{\"ok\":false}");return false;}
 
 void WebUi::routes(){
     server.on("/api/gopro/shutter",HTTP_POST,[this](){if(!goProAvailable())return;const String on=server.arg("on");const bool ok=(on=="0"||on=="1")&&gp->setShutter(server.arg("id"),on=="1");server.send(ok?200:409,"application/json",ok?"{\"ok\":true}":"{\"ok\":false}");});
@@ -203,7 +203,7 @@ void WebUi::routes(){
 
     server.on("/api/selectCamera",HTTP_POST,[this](){
         const String value=server.arg("camera");
-        if(value!="blackmagic"&&value!="gopro"&&value!="dji"){server.send(400,"application/json","{\"ok\":false}");return;}
+        if(value!="blackmagic"&&value!="gopro"&&value!="dji"&&value!="dji2"){server.send(400,"application/json","{\"ok\":false}");return;}
         const bool djiRecording=dji&&dji->state().recording;
         if(restartRequested||cam.state().recording||cam.waitingForPasskey()||djiRecording){server.send(409,"application/json","{\"ok\":false}");return;}
         if(!prefs.selectCamera(value)){server.send(500,"application/json","{\"ok\":false}");return;}

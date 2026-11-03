@@ -5,6 +5,7 @@
 #include "camera/BlackmagicCamera.h"
 #include "camera/GoProCamera.h"
 #include "camera/DjiActionCamera.h"
+#include "camera/DjiAction2Camera.h"
 #include "web/WebUi.h"
 
 HardwareSerial FcSerial(1);
@@ -13,7 +14,7 @@ AppSettings settings;
 MspClient msp(FcSerial);
 BlackmagicCamera camera;
 GoProCamera* gopro = nullptr;
-DjiActionCamera* dji = nullptr;
+ICameraBackend* dji = nullptr;  // DJI R SDK (Action 4+) or DUML (Action 2)
 WebUi* web = nullptr;
 
 static constexpr int ESP_RX_PIN = 6;
@@ -122,6 +123,7 @@ void setup() {
     char ap[32]; snprintf(ap,sizeof(ap),"FPVCineCam32-%04X",(uint16_t)(mac&0xffff));
     if (settings.selectedCamera == "gopro") gopro = new GoProCamera();
     if (settings.selectedCamera == "dji") dji = new DjiActionCamera();
+    if (settings.selectedCamera == "dji2") dji = new DjiAction2Camera();
     web = new WebUi(settings,settingsStore,camera,msp,gopro,dji);
     Serial.printf("[%8lu ms] WIFI: starting SoftAP %s\n", (unsigned long)millis(), ap);
     web->begin(ap);
@@ -181,7 +183,7 @@ void loop() {
     // When the camera control link comes back, re-apply the physical switch position once.
     // This avoids losing a REC/STOP state across camera reconnect/authentication.
     const bool useGoPro = settings.selectedCamera == "gopro" && gopro;
-    const bool useDji = settings.selectedCamera == "dji" && dji;
+    const bool useDji = dji != nullptr;
     const bool controlReady = useGoPro ? gopro->snapshot().controlReady : (useDji ? dji->state().controlReady : c.controlReady);
     const String goProTarget = useGoPro ? gopro->activeCameraId() : String("");
     if (controlReady && (!lastControlReady || (useGoPro && goProTarget != lastGoProRcTarget))) recordMapInitialized = false;

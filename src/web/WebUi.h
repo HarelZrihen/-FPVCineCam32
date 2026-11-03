@@ -9,7 +9,7 @@
 
 class WebUi {
 public:
-    WebUi(AppSettings& settings, SettingsStore& store, BlackmagicCamera& camera, MspClient& msp, GoProCamera* goPro, DjiActionCamera* djiCamera)
+    WebUi(AppSettings& settings, SettingsStore& store, BlackmagicCamera& camera, MspClient& msp, GoProCamera* goPro, ICameraBackend* djiCamera)
       : s(settings), prefs(store), cam(camera), mspClient(msp), server(80), savedCamera(settings.selectedCamera), gp(goPro), dji(djiCamera) {}
     void begin(const String& apName);
     void loop();
@@ -22,7 +22,7 @@ private:
     String savedCamera;
     bool restartRequested=false; uint32_t restartAtMs=0;
     GoProCamera* gp;
-    DjiActionCamera* dji;
+    ICameraBackend* dji;
     bool goProAvailable();
     bool djiAvailable();
     bool cameraAvailable();

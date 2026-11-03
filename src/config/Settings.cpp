@@ -5,7 +5,7 @@ void SettingsStore::begin() { prefs.begin("fpvcinecam32", false); }
 AppSettings SettingsStore::load() {
     AppSettings s;
     s.selectedCamera = prefs.getString("camsystem", "blackmagic");
-    if (s.selectedCamera != "gopro" && s.selectedCamera != "dji") s.selectedCamera = "blackmagic";
+    if (s.selectedCamera != "gopro" && s.selectedCamera != "dji" && s.selectedCamera != "dji2") s.selectedCamera = "blackmagic";
     s.uartRxPin = prefs.getInt("rx", s.uartRxPin);
     s.uartTxPin = prefs.getInt("tx", s.uartTxPin);
     s.uartBaud = prefs.getUInt("baud", s.uartBaud);
@@ -40,6 +40,6 @@ void SettingsStore::clearCamera() {
 }
 
 bool SettingsStore::selectCamera(const String& value) {
-    if (value != "blackmagic" && value != "gopro" && value != "dji") return false;
+    if (value != "blackmagic" && value != "gopro" && value != "dji" && value != "dji2") return false;
     return prefs.putString("camsystem", value) > 0;
 }
