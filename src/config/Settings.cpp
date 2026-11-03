@@ -12,6 +12,7 @@ AppSettings SettingsStore::load() {
     s.recordChannel = prefs.getInt("recch", s.recordChannel);
     s.recordThreshold = prefs.getInt("recthr", s.recordThreshold);
     s.recordActiveHigh = prefs.getBool("rechigh", s.recordActiveHigh);
+    s.recordStopDelaySec = prefs.getInt("recdelay", s.recordStopDelaySec);
     s.osdSlot = prefs.getUChar("osdslot", s.osdSlot);
     s.cameraAddress = prefs.getString("camaddr", "");
     s.cameraAddressType = prefs.getUChar("camtype", 0);
@@ -27,6 +28,7 @@ void SettingsStore::save(const AppSettings& s) {
     prefs.putInt("recch", s.recordChannel);
     prefs.putInt("recthr", s.recordThreshold);
     prefs.putBool("rechigh", s.recordActiveHigh);
+    prefs.putInt("recdelay", s.recordStopDelaySec);
     prefs.putUChar("osdslot", s.osdSlot);
     prefs.putString("camaddr", s.cameraAddress);
     prefs.putUChar("camtype", s.cameraAddressType);

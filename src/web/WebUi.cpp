@@ -60,6 +60,7 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 <label>RC channel<select id=ch></select></label>
 <label>Threshold<input id=thr type=number min=800 max=2200></label>
 <label>Record when<select id=high><option value=1>Above threshold</option><option value=0>Below threshold</option></select></label>
+<label>Stop delay (s)<input id=dly type=number min=0 max=60></label>
 <label>Live selected channel<input id=selectedValue readonly></label>
 </div>
 <button onclick=saveMapping()>Save mapping</button><span id=saveMsg class=muted></span>
@@ -139,7 +140,7 @@ async function refresh(){
     }
     if(s.gopro)drawGoPro(s.gopro);if(s.dji)drawDji(s.dji);
     el('pin').style.display=s.camera.waitingPin?'block':'none';el('camSummary').textContent=cameraLine(s.camera)+(s.camera.model?` | ${s.camera.model}`:'');const linked=s.camera.connected&&s.camera.controlReady;el('camBadge').className='statusBadge '+(linked?'statusOnline':'statusOffline');el('camBadge').textContent=linked?'Camera connected':'Camera disconnected';
-    el('mspSummary').textContent=s.msp.connected?`MSP connected | API ${s.msp.api} | last RC response ${s.msp.responseMs} ms`:'MSP offline - check UART wiring and Betaflight Ports';el('mspStats').textContent=`Responses: ${s.msp.responses} | Timeouts: ${s.msp.timeouts} | Invalid frames: ${s.msp.invalidFrames}`;if(!mappingControlsLoaded){el('ch').value=s.settings.channel;el('thr').value=s.settings.threshold;el('high').value=s.settings.high?1:0;mappingControlsLoaded=true;}drawChannels(s);
+    el('mspSummary').textContent=s.msp.connected?`MSP connected | API ${s.msp.api} | last RC response ${s.msp.responseMs} ms`:'MSP offline - check UART wiring and Betaflight Ports';el('mspStats').textContent=`Responses: ${s.msp.responses} | Timeouts: ${s.msp.timeouts} | Invalid frames: ${s.msp.invalidFrames}`;if(!mappingControlsLoaded){el('ch').value=s.settings.channel;el('thr').value=s.settings.threshold;el('high').value=s.settings.high?1:0;el('dly').value=s.settings.delay;mappingControlsLoaded=true;}drawChannels(s);
   }catch(e){el('mspSummary').textContent='ESP web API unavailable'}
 }
 async function scan(){el('cams').textContent='Scanning...';try{const x=await api('/api/scan');el('cams').innerHTML='';if(!x.length){el('cams').textContent=' No Blackmagic cameras found';return}x.forEach(c=>{const b=document.createElement('button');b.textContent=(c.name||'Blackmagic')+' '+c.address;b.onclick=()=>connect(c.address,c.type);el('cams').appendChild(b)})}catch(e){el('cams').textContent='Scan error: '+e.message}}
@@ -147,7 +148,7 @@ async function connect(a,t){try{await api('/api/connect?address='+encodeURICompo
 async function sendPin(){const v=el('pinval').value.trim();if(!/^\d{6}$/.test(v)){alert('Enter the 6-digit PIN shown on the camera');return}await api('/api/pin?value='+v);setTimeout(refresh,400)}
 async function forget(){await api('/api/forget');refresh()}
 async function rec(v){await api('/api/record?on='+v);setTimeout(refresh,250)}
-async function saveMapping(){await api(`/api/saveMapping?ch=${el('ch').value}&thr=${el('thr').value}&high=${el('high').value}`);el('saveMsg').textContent='Saved';setTimeout(()=>el('saveMsg').textContent='',1200);refresh()}
+async function saveMapping(){await api(`/api/saveMapping?ch=${el('ch').value}&thr=${el('thr').value}&high=${el('high').value}&dly=${el('dly').value}`);el('saveMsg').textContent='Saved';setTimeout(()=>el('saveMsg').textContent='',1200);refresh()}
 async function wifiOff(){try{await api('/api/wifioff');}catch(e){}}
 const refreshTimer=setInterval(refresh,1500);refresh();
 </script></body></html>)HTML";
@@ -173,7 +174,7 @@ String WebUi::statusJson(){
     j += "\"msp\":{\"connected\":"+String(mspClient.connected()?"true":"false")+",\"rcFresh\":"+String(mspClient.rcFresh()?"true":"false")+",\"api\":\""+String(mspClient.apiMajor())+"."+String(mspClient.apiMinor())+"\",\"responseMs\":"+String(mspClient.lastResponseMs())+",\"responses\":"+String(mspClient.responses())+",\"timeouts\":"+String(mspClient.timeouts())+",\"invalidFrames\":"+String(mspClient.invalidFrames())+",\"channels\":[";
     const size_t count=min(mspClient.rcCount(),(size_t)16);for(size_t i=0;i<count;i++){if(i)j+=',';j+=String(mspClient.rcValue(i));}
     j += "]},";
-    j += "\"settings\":{\"rx\":6,\"tx\":7,\"baud\":115200,\"channel\":"+String(s.recordChannel)+",\"threshold\":"+String(s.recordThreshold)+",\"high\":"+String(s.recordActiveHigh?"true":"false")+",\"slot\":"+String(s.osdSlot)+"}}";
+    j += "\"settings\":{\"rx\":6,\"tx\":7,\"baud\":115200,\"channel\":"+String(s.recordChannel)+",\"threshold\":"+String(s.recordThreshold)+",\"high\":"+String(s.recordActiveHigh?"true":"false")+",\"delay\":"+String(s.recordStopDelaySec)+",\"slot\":"+String(s.osdSlot)+"}}";
     if(gp){j.remove(j.length()-1);j+=",\"gopro\":"+gp->statusJson()+"}";}
     if(dji){
         const CameraState& d=dji->state();
@@ -218,6 +219,6 @@ void WebUi::routes(){
     server.on("/api/forget",HTTP_GET,[this](){if(!cameraAvailable())return;cam.forgetPairing();prefs.clearCamera();s.cameraAddress="";server.send(200,"application/json","{\"ok\":true}");});
     server.on("/api/record",HTTP_GET,[this](){if(!cameraAvailable())return;bool on=server.arg("on").toInt()!=0;bool ok=cam.setRecording(on);server.send(200,"application/json",String("{\"ok\":")+(ok?"true":"false")+"}");});
     server.on("/api/osdtest",HTTP_GET,[this](){mspClient.setCustomText(s.osdSlot,"REC TEST");if(s.osdSlot<3)mspClient.setCustomText(s.osdSlot+1,"MEDIA TEST");server.send(200,"application/json","{\"ok\":true}");});
-    server.on("/api/saveMapping",HTTP_GET,[this](){s.recordChannel=constrain(server.arg("ch").toInt(),1,16);s.recordThreshold=constrain(server.arg("thr").toInt(),800,2200);s.recordActiveHigh=server.arg("high").toInt()!=0;prefs.save(s);server.send(200,"application/json","{\"ok\":true}");});
+    server.on("/api/saveMapping",HTTP_GET,[this](){s.recordChannel=constrain(server.arg("ch").toInt(),1,16);s.recordThreshold=constrain(server.arg("thr").toInt(),800,2200);s.recordActiveHigh=server.arg("high").toInt()!=0;s.recordStopDelaySec=constrain(server.arg("dly").toInt(),0,60);prefs.save(s);server.send(200,"application/json","{\"ok\":true}");});
     server.on("/api/saveOsd",HTTP_GET,[this](){s.osdSlot=constrain(server.arg("slot").toInt(),0,3);prefs.save(s);server.send(200,"application/json","{\"ok\":true}");});
 }
