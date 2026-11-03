@@ -8,6 +8,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;ma
 h1{margin-bottom:4px}.sub{color:#aaa;margin-bottom:16px}.card{background:#1c1c1e;border-radius:14px;padding:16px;margin:14px 0}h3{margin-top:0}
 button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radius:8px;border:1px solid #555;background:#29292c;color:#fff}button{cursor:pointer}.ok{color:#6ee787}.warn{color:#ffd866}.muted{color:#aaa}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.channels{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.ch{background:#252528;border-radius:8px;padding:8px;text-align:center}.ch b{display:block;font-size:13px;color:#aaa}.ch span{font-size:18px}.selected{outline:2px solid #6ee787}.statusBadge{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;font-weight:600;margin-bottom:8px}.statusBadge::before{content:"";width:10px;height:10px;border-radius:50%;background:currentColor}.statusOnline{color:#6ee787;background:#17351f}.statusOffline{color:#ff6b6b;background:#3a1b1b}pre{white-space:pre-wrap;word-break:break-word}@media(max-width:600px){.grid{grid-template-columns:1fr}.channels{grid-template-columns:repeat(2,1fr)}}
 .wiring{width:100%;border-collapse:collapse;text-align:left}.wiring th,.wiring td{padding:10px 8px;border-bottom:1px solid #38383b}.wiring th{color:#aaa}
+.mode{background:#242427;border:1px solid #39393d;border-radius:10px;padding:10px 12px;margin:10px 0}.del{margin-left:4px;padding:4px 10px;font-size:18px;line-height:1;color:#ff6b6b}.mode.active{border-color:#e2a33b;box-shadow:0 0 0 1px #e2a33b}.modeHead{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}.modeHead input{width:90px}.modeRange{color:#e2a33b;font-weight:600;margin-left:auto}
+.slider{position:relative;height:34px;margin-top:4px}.track{position:absolute;left:9px;right:9px;top:12px;height:10px;background:#38383b;border-radius:5px}.fill{position:absolute;top:0;bottom:0;background:#e2a33b;border-radius:5px}.marker{position:absolute;top:-6px;width:3px;height:22px;margin-left:-1px;background:#fff;border-radius:2px}
+.slider input[type=range]{position:absolute;left:0;top:4px;width:100%;height:26px;margin:0;padding:0;background:none;border:0;pointer-events:none;-webkit-appearance:none;appearance:none}.slider input::-webkit-slider-runnable-track{background:none}.slider input::-webkit-slider-thumb{pointer-events:auto;-webkit-appearance:none;width:18px;height:26px;border-radius:5px;background:#ddd;cursor:pointer}.slider input::-moz-range-thumb{pointer-events:auto;width:18px;height:26px;border:0;border-radius:5px;background:#ddd;cursor:pointer}.scale{display:flex;justify-content:space-between;font-size:12px;color:#888;padding:0 2px}
 .gpCamera{background:#242427;border:1px solid #39393d;border-radius:10px;padding:16px;margin:12px 0}.gpCamera h4{font-size:20px;margin:0 0 6px}.gpCamera p{margin:8px 0}.gpCamera .utility{margin-top:12px}.gpCamera .utility button{font-size:14px;color:#bbb}.gpCamera .primary{font-weight:600}
 </style></head><body>
 <h1>FPVCineCam32</h1><div class=sub>Camera control + Betaflight MSP</div>
@@ -28,6 +31,11 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 <p id=gpStatus role=status>Offline</p>
 <h4>Saved cameras</h4><div id=gpSaved></div>
 <p id=gpStorageError class=warn hidden>Saved camera list could not be read or saved. Copy the log before restarting.</p>
+<h4>Preset switch</h4>
+<p class=muted>Pick a preset on the camera, press Read, and type its ID into a row. Leave the channel on AUTO and flip the switch on your radio to pick it, then drag the range. The preset loads when the white marker is inside the range, only while not recording.</p>
+<p>Current preset ID: <b id=gpPreset>--</b> <button onclick=gpReadPreset()>Read</button></p>
+<div id=presetModes></div>
+<button id=addPreset onclick=addPreset()>Add preset</button><button onclick=savePresets()>Save presets</button><span id=presetMsg class=muted></span>
 <button id=gpCopy onclick=copyGoProLog()>Copy log</button>
 <textarea id=gpLog readonly aria-label="GoPro connection log" hidden style="box-sizing:border-box;width:100%;height:180px;background:#111;color:#eee"></textarea>
 <p id=gpCopyStatus class=muted role=status></p>
@@ -102,10 +110,25 @@ async function saveCamera(){
   }catch(e){cameraSavePending=false;el('saveCamera').disabled=false;el('cameraSaveStatus').textContent='Could not save camera: '+e.message;}
 }
 for(let i=1;i<=16;i++){const o=document.createElement('option');o.value=i;o.textContent='CH'+i;el('ch').appendChild(o)}
+const PR_MIN=900,PR_MAX=2100;let rcLive=[];
+function pct(v){return (Math.min(PR_MAX,Math.max(PR_MIN,v))-PR_MIN)/(PR_MAX-PR_MIN)*100}
+const PR_MAX_ROWS=6;let presetRows=[];
+// Rows mirror Betaflight's Modes tab. ch 'auto' waits for a channel to move, then locks onto it.
+function addPreset(){if(presetRows.length>=PR_MAX_ROWS)return;presetRows.push({id:'',ch:'auto',min:1300,max:1700,snap:rcLive.slice()});buildPresets();}
+function deletePreset(i){presetRows.splice(i,1);buildPresets();}
+function buildPresets(){const box=el('presetModes');box.replaceChildren();presetRows.forEach((r,i)=>{const d=document.createElement('div');d.className='mode';d.id='pm'+i;d.innerHTML=`<div class=modeHead><label>Preset ID <input id=pid${i} type=number min=0></label><label>Channel <select id=pch${i}><option value=auto>AUTO</option></select></label><span class=modeRange id=prv${i}></span><button class=del aria-label="Delete preset" onclick=deletePreset(${i})>&times;</button></div><div class=slider><div class=track><div class=fill id=pfill${i}></div><div class=marker id=pmk${i} hidden></div></div><input type=range id=pmin${i} min=${PR_MIN} max=${PR_MAX} step=25 aria-label="Range low"><input type=range id=pmax${i} min=${PR_MIN} max=${PR_MAX} step=25 aria-label="Range high"></div><div class=scale><span>900</span><span>1200</span><span>1500</span><span>1800</span><span>2100</span></div>`;box.appendChild(d);for(let c=1;c<=16;c++){const o=document.createElement('option');o.value=c;o.textContent=c>4?`AUX${c-4} (CH${c})`:'CH'+c;el('pch'+i).appendChild(o)}
+el('pid'+i).value=r.id;el('pch'+i).value=r.ch;el('pmin'+i).value=r.min;el('pmax'+i).value=r.max;
+el('pid'+i).oninput=()=>{r.id=el('pid'+i).value;drawPresets()};
+el('pch'+i).onchange=()=>{r.ch=el('pch'+i).value;r.snap=rcLive.slice();drawPresets()};
+el('pmin'+i).oninput=()=>{r.min=+el('pmin'+i).value;if(r.min>r.max)el('pmax'+i).value=r.max=r.min;drawPresets()};
+el('pmax'+i).oninput=()=>{r.max=+el('pmax'+i).value;if(r.max<r.min)el('pmin'+i).value=r.min=r.max;drawPresets()};});
+el('addPreset').disabled=presetRows.length>=PR_MAX_ROWS;drawPresets();}
+function drawPresets(){presetRows.forEach((r,i)=>{if(r.ch==='auto'){const snap=r.snap&&r.snap.length?r.snap:(r.snap=rcLive.slice());const moved=rcLive.findIndex((v,c)=>c>=4&&snap[c]&&Math.abs(v-snap[c])>200);if(moved>=0){r.ch=String(moved+1);el('pch'+i).value=r.ch;}}
+const ch=r.ch==='auto'?0:+r.ch,v=ch?rcLive[ch-1]:0;el('pfill'+i).style.left=pct(r.min)+'%';el('pfill'+i).style.width=(pct(r.max)-pct(r.min))+'%';el('prv'+i).textContent=r.ch==='auto'?'Move a switch...':`${r.min} - ${r.max}`;el('pmk'+i).hidden=!v;if(v)el('pmk'+i).style.left=pct(v)+'%';el('pm'+i).classList.toggle('active',!!v&&r.id!==''&&v>=r.min&&v<=r.max);});}
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.json()}
 let gpRequestPending=false,gpList='',gpCards='',gpScanRequested=false;
 function goProTimeText(seconds){return Math.floor(seconds/3600)+'h:'+String(Math.floor((seconds%3600)/60)).padStart(2,'0')}
-function drawGoPro(g){
+function drawGoPro(g){el('gpPreset').textContent=g.preset>=0?g.preset:'--';
   el('gpStatus').textContent=g.status==='Scanning'?'':g.status;if(g.status==='Scanning')el('gpScanStatus').textContent='Scanning...';el('gpStorageError').hidden=!g.savedListError;
   const blocked=g.busy||gpRequestPending||cameraSavePending;const discoveries=g.cameras.filter(c=>!c.saved);
   if(gpScanRequested&&!gpRequestPending&&!g.busy){el('gpScanStatus').textContent=discoveries.length?'':'No new GoPros found.';gpScanRequested=false;}
@@ -139,7 +162,7 @@ async function refresh(){
     }
     if(s.gopro)drawGoPro(s.gopro);if(s.dji)drawDji(s.dji);
     el('pin').style.display=s.camera.waitingPin?'block':'none';el('camSummary').textContent=cameraLine(s.camera)+(s.camera.model?` | ${s.camera.model}`:'');const linked=s.camera.connected&&s.camera.controlReady;el('camBadge').className='statusBadge '+(linked?'statusOnline':'statusOffline');el('camBadge').textContent=linked?'Camera connected':'Camera disconnected';
-    el('mspSummary').textContent=s.msp.connected?`MSP connected | API ${s.msp.api} | last RC response ${s.msp.responseMs} ms`:'MSP offline - check UART wiring and Betaflight Ports';el('mspStats').textContent=`Responses: ${s.msp.responses} | Timeouts: ${s.msp.timeouts} | Invalid frames: ${s.msp.invalidFrames}`;if(!mappingControlsLoaded){el('ch').value=s.settings.channel;el('thr').value=s.settings.threshold;el('high').value=s.settings.high?1:0;mappingControlsLoaded=true;}drawChannels(s);
+    el('mspSummary').textContent=s.msp.connected?`MSP connected | API ${s.msp.api} | last RC response ${s.msp.responseMs} ms`:'MSP offline - check UART wiring and Betaflight Ports';el('mspStats').textContent=`Responses: ${s.msp.responses} | Timeouts: ${s.msp.timeouts} | Invalid frames: ${s.msp.invalidFrames}`;if(!mappingControlsLoaded){el('ch').value=s.settings.channel;el('thr').value=s.settings.threshold;el('high').value=s.settings.high?1:0;presetRows=s.settings.presets.map(p=>({id:p.id>=0?String(p.id):'',ch:String(p.ch),min:p.min,max:p.max}));rcLive=s.msp.channels||[];buildPresets();mappingControlsLoaded=true;}drawChannels(s);rcLive=s.msp.channels||[];drawPresets();
   }catch(e){el('mspSummary').textContent='ESP web API unavailable'}
 }
 async function scan(){el('cams').textContent='Scanning...';try{const x=await api('/api/scan');el('cams').innerHTML='';if(!x.length){el('cams').textContent=' No Blackmagic cameras found';return}x.forEach(c=>{const b=document.createElement('button');b.textContent=(c.name||'Blackmagic')+' '+c.address;b.onclick=()=>connect(c.address,c.type);el('cams').appendChild(b)})}catch(e){el('cams').textContent='Scan error: '+e.message}}
@@ -147,6 +170,8 @@ async function connect(a,t){try{await api('/api/connect?address='+encodeURICompo
 async function sendPin(){const v=el('pinval').value.trim();if(!/^\d{6}$/.test(v)){alert('Enter the 6-digit PIN shown on the camera');return}await api('/api/pin?value='+v);setTimeout(refresh,400)}
 async function forget(){await api('/api/forget');refresh()}
 async function rec(v){await api('/api/record?on='+v);setTimeout(refresh,250)}
+async function savePresets(){const rows=presetRows.filter(r=>r.id!==''&&r.ch!=='auto');if(rows.length<presetRows.length){el('presetMsg').textContent='Set a preset ID and channel on every row first';return;}const q=new URLSearchParams({n:rows.length});rows.forEach((r,i)=>{q.append('ch'+i,r.ch);q.append('min'+i,r.min);q.append('max'+i,r.max);q.append('id'+i,r.id);});await api('/api/savePresets?'+q);el('presetMsg').textContent='Saved';setTimeout(()=>el('presetMsg').textContent='',1200);}
+async function gpReadPreset(){try{await api('/api/gopro/readPreset',{method:'POST'});}catch(e){el('gpMessage').textContent='Read failed: '+e.message;}setTimeout(refresh,800);}
 async function saveMapping(){await api(`/api/saveMapping?ch=${el('ch').value}&thr=${el('thr').value}&high=${el('high').value}`);el('saveMsg').textContent='Saved';setTimeout(()=>el('saveMsg').textContent='',1200);refresh()}
 async function wifiOff(){try{await api('/api/wifioff');}catch(e){}}
 const refreshTimer=setInterval(refresh,1500);refresh();
@@ -166,6 +191,11 @@ void WebUi::begin(const String& apName) {
 void WebUi::loop(){if(restartRequested&&(int32_t)(millis()-restartAtMs)>=0)ESP.restart();if(running)server.handleClient();if(stopRequested&&millis()>=stopAtMs){stopRequested=false;stopWifi();}}
 void WebUi::stopWifi(){if(!running)return;Serial.printf("[%8lu ms] WIFI: stopping AP, stations=%u\n",(unsigned long)millis(),(unsigned)WiFi.softAPgetStationNum());server.stop();WiFi.softAPdisconnect(true);WiFi.mode(WIFI_OFF);running=false;Serial.printf("[%8lu ms] WIFI: stopped, mode=%d\n",(unsigned long)millis(),(int)WiFi.getMode());}
 
+static String presetsJson(const AppSettings& s){
+    String j="[";
+    for(int i=0;i<s.presetCount;++i){const auto& p=s.presets[i];j+=String(i?",":"")+"{\"ch\":"+String(p.channel)+",\"min\":"+String(p.low)+",\"max\":"+String(p.high)+",\"id\":"+String((long)p.id)+"}";}
+    return j+"]";
+}
 String WebUi::statusJson(){
     const CameraState& c=cam.state();
     String j="{\"selectedCamera\":\""+savedCamera+"\",\"restartPending\":"+String(restartRequested?"true":"false")+",\"camera\":{";
@@ -173,7 +203,7 @@ String WebUi::statusJson(){
     j += "\"msp\":{\"connected\":"+String(mspClient.connected()?"true":"false")+",\"rcFresh\":"+String(mspClient.rcFresh()?"true":"false")+",\"api\":\""+String(mspClient.apiMajor())+"."+String(mspClient.apiMinor())+"\",\"responseMs\":"+String(mspClient.lastResponseMs())+",\"responses\":"+String(mspClient.responses())+",\"timeouts\":"+String(mspClient.timeouts())+",\"invalidFrames\":"+String(mspClient.invalidFrames())+",\"channels\":[";
     const size_t count=min(mspClient.rcCount(),(size_t)16);for(size_t i=0;i<count;i++){if(i)j+=',';j+=String(mspClient.rcValue(i));}
     j += "]},";
-    j += "\"settings\":{\"rx\":6,\"tx\":7,\"baud\":115200,\"channel\":"+String(s.recordChannel)+",\"threshold\":"+String(s.recordThreshold)+",\"high\":"+String(s.recordActiveHigh?"true":"false")+",\"slot\":"+String(s.osdSlot)+"}}";
+    j += "\"settings\":{\"rx\":6,\"tx\":7,\"baud\":115200,\"channel\":"+String(s.recordChannel)+",\"threshold\":"+String(s.recordThreshold)+",\"high\":"+String(s.recordActiveHigh?"true":"false")+",\"slot\":"+String(s.osdSlot)+",\"presets\":"+presetsJson(s)+"}}";
     if(gp){j.remove(j.length()-1);j+=",\"gopro\":"+gp->statusJson()+"}";}
     if(dji){
         const CameraState& d=dji->state();
@@ -194,6 +224,8 @@ void WebUi::routes(){
     server.on("/api/gopro/forget",HTTP_POST,[this](){if(!goProAvailable())return;const bool ok=gp->forget(server.arg("id"));server.send(ok?200:409,"application/json",ok?"{\"ok\":true}":"{\"ok\":false}");});
     server.on("/api/gopro/connectSaved",HTTP_POST,[this](){if(!goProAvailable())return;const bool ok=gp->connectSaved(server.arg("id"));server.send(ok?200:409,"application/json",ok?"{\"ok\":true}":"{\"ok\":false}");});
     server.on("/api/gopro/rename",HTTP_POST,[this](){if(!goProAvailable())return;const bool ok=gp->renameSaved(server.arg("id"),server.arg("name"));server.send(ok?200:409,"application/json",ok?"{\"ok\":true}":"{\"ok\":false}");});
+    server.on("/api/gopro/readPreset",HTTP_POST,[this](){if(!goProAvailable())return;const bool ok=gp->readPreset();server.send(ok?200:409,"application/json",ok?"{\"ok\":true}":"{\"ok\":false}");});
+    server.on("/api/savePresets",HTTP_GET,[this](){s.presetCount=constrain(server.arg("n").toInt(),0,AppSettings::MAX_PRESETS);for(int i=0;i<s.presetCount;++i){const String n(i);auto& p=s.presets[i];p.channel=constrain(server.arg("ch"+n).toInt(),1,16);p.low=constrain(server.arg("min"+n).toInt(),900,2100);p.high=constrain(server.arg("max"+n).toInt(),p.low,2100);const long v=server.arg("id"+n).toInt();p.id=v<0?-1:(int32_t)v;}prefs.save(s);server.send(200,"application/json","{\"ok\":true}");});
     server.on("/api/gopro/log",HTTP_GET,[this](){if(!goProAvailable())return;server.sendHeader("Cache-Control","no-store");server.send(200,"text/plain; charset=utf-8",gp->connectionLog());});
 
     server.on("/api/dji/scan",HTTP_POST,[this](){if(!djiAvailable())return;String j;const bool ok=dji->startScan(j);server.send(ok?200:409,"application/json",ok?j:"{\"ok\":false}");});

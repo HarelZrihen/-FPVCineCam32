@@ -139,6 +139,8 @@ void GoProCamera::task(void* context) {
         case Job::Forget: self->runForget();break;
         case Job::Rec: self->runShutter(true);break;
         case Job::Stop: self->runShutter(false);break;
+        case Job::Preset: self->runPreset();break;
+        case Job::ReadPreset: self->runReadPreset();break;
     }
     self->working=false;
     vTaskDelete(nullptr);
@@ -348,6 +350,46 @@ void GoProCamera::runShutter(bool on){
     if(shutterResponses==before)log("%s response not observed: %s",label,linked?"timeout":"disconnected");
     // No automatic command retry, reconnect, or inferred recording state.
 }
+bool GoProCamera::controlUsable(){
+    return state==State::Ready && linked && secured && hardwareReady && client && client->isConnected();
+}
+bool GoProCamera::loadPreset(const String& id,int32_t preset){
+    if(working || !controlUsable() || preset<0 || id!=activeCameraId())return false;
+    requestedPreset=preset;
+    return launch(Job::Preset);
+}
+bool GoProCamera::readPreset(){
+    if(working || !controlUsable())return false;
+    return launch(Job::ReadPreset);
+}
+void GoProCamera::runPreset(){
+    const int32_t preset=requestedPreset;
+    auto* service=client?client->getService(SERVICE):nullptr;
+    auto* command=service?service->getCharacteristic(gpUuid(0x72)):nullptr;
+    if(!command){log("Preset %ld: command characteristic unavailable",(long)preset);return;}
+    // Load Preset: command 0x40, 4-byte big-endian preset ID. Response is {0x40,status}.
+    const uint8_t packet[]={0x06,0x40,0x04,(uint8_t)(preset>>24),(uint8_t)(preset>>16),(uint8_t)(preset>>8),(uint8_t)preset};
+    // The camera refuses presets while busy (e.g. just after connecting), so retry a few times.
+    for(unsigned attempt=1;attempt<=3 && controlUsable();++attempt){
+        const uint32_t before=presetResponses.load();
+        if(!command->writeValue(packet,sizeof(packet),true)){log("Preset %ld write failed",(long)preset);return;}
+        for(unsigned i=0;i<30 && linked && presetResponses==before;++i)vTaskDelay(pdMS_TO_TICKS(100));
+        if(presetResponses==before){log("Preset %ld: no response",(long)preset);continue;}
+        const uint8_t status=presetStatus.load();
+        log("Preset %ld load status=%u (0=success) attempt %u",(long)preset,status,attempt);
+        if(status==0){activePreset=preset;return;}
+        vTaskDelay(pdMS_TO_TICKS(700));
+    }
+}
+void GoProCamera::runReadPreset(){
+    auto* service=client?client->getService(SERVICE):nullptr;
+    auto* query=service?service->getCharacteristic(gpUuid(0x76)):nullptr;
+    if(!query){log("Preset read: query characteristic unavailable");return;}
+    // Get Status 0x13 for status 97 (active preset ID); decoded in decodeStatus().
+    const uint8_t request[]={0x02,0x13,0x61};
+    if(!query->writeValue(request,sizeof(request),true))log("Preset read write failed");
+    else vTaskDelay(pdMS_TO_TICKS(500));
+}
 void GoProCamera::runForget(){
     const bool current=matches(removal,savedAddress,savedType);
     if(current){reconnect=false;retryAllowed=false;}
@@ -443,6 +485,14 @@ void GoProCamera::queryResponse(const uint8_t* data,size_t len){
 }
 void GoProCamera::decodeStatus(const uint8_t* data,size_t len){
     if(len<2){statusFault("short response",data,len);return;}
+    if(data[0]==0x13){
+        // One-shot active preset read; kept apart from the registered status stream.
+        if(data[1]==0 && len>=8 && data[2]==97 && data[3]==4){
+            activePreset=(int32_t)(((uint32_t)data[4]<<24)|((uint32_t)data[5]<<16)|((uint32_t)data[6]<<8)|data[7]);
+            log("Active preset ID: %ld",(long)activePreset.load());
+        }else log("Active preset read failed status=%u len=%u",data[1],(unsigned)len);
+        return;
+    }
     if(data[0]!=0x53 && data[0]!=0x93){statusFault("unexpected query ID",data,len);return;}
     if(data[1]!=0){statusFault("query response status nonzero",data,len);return;}
     // Validate the complete TLV message before changing the visible state.
@@ -509,10 +559,14 @@ void GoProCamera::response(const uint8_t* data,size_t len){
         log("Shutter response status=%u (0=success 1=error 2=invalid parameter)",responsePrefix[1]);
         ++shutterResponses;
     }
+    if(!responseRemaining && responseReceived>=2 && responsePrefix[0]==0x40){
+        presetStatus=responsePrefix[1];
+        ++presetResponses;
+    }
 }
 void GoProCamera::Callbacks::onConnect(NimBLEClient*){owner->linked=true;owner->log("BLE connected");}
 void GoProCamera::Callbacks::onDisconnect(NimBLEClient*,int reason){
-    owner->linked=false;owner->secured=false;owner->bonded=false;owner->hardwareReady=false;
+    owner->linked=false;owner->secured=false;owner->bonded=false;owner->hardwareReady=false;owner->activePreset=-1;
     owner->clearStatus();
     owner->queryRemaining=owner->queryReceived=0;owner->queryFragmentPending=false;
     if(owner->state!=State::Failed)owner->state=State::Offline;
@@ -554,7 +608,7 @@ String GoProCamera::escape(const char* value){
 }
 String GoProCamera::statusJson(){
     static const char* names[]={"Offline","Scanning","Connecting","Pairing","Connected","Control ready","Connection failed"};
-    String out="{\"status\":\""+String(names[(unsigned)state.load()])+"\",\"busy\":"+(working?String("true"):String("false"))+",\"connected\":"+(linked?String("true"):String("false"))+",\"bonded\":"+(bonded?String("true"):String("false"))+",\"encrypted\":"+(secured?String("true"):String("false"))+",\"cameras\":[";
+    String out="{\"status\":\""+String(names[(unsigned)state.load()])+"\",\"busy\":"+(working?String("true"):String("false"))+",\"connected\":"+(linked?String("true"):String("false"))+",\"bonded\":"+(bonded?String("true"):String("false"))+",\"encrypted\":"+(secured?String("true"):String("false"))+",\"preset\":"+String((long)activePreset.load())+",\"cameras\":[";
     const auto values=snapshot();
     const auto cards=savedSnapshot();
     char active[18];uint8_t type;
