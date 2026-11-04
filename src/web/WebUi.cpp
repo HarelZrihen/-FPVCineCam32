@@ -1,5 +1,6 @@
 #include "WebUi.h"
 #include <WiFi.h>
+#include "../config/Board.h"
 
 const char WebUi::PAGE[] PROGMEM = R"HTML(
 <!doctype html><html><head><meta charset="utf-8"><meta name=viewport content="width=device-width,initial-scale=1"><title>FPVCineCam32</title>
@@ -60,7 +61,7 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 </div>
 
 <div class=card><h3>Betaflight / MSP</h3>
-<table class=wiring><thead><tr><th scope=col>Flight controller</th><th scope=col>ESP32-C3</th></tr></thead><tbody><tr><td>FC TX</td><td>GPIO6 (ESP RX)</td></tr><tr><td>FC RX</td><td>GPIO7 (ESP TX)</td></tr><tr><td>GND</td><td>GND</td></tr></tbody></table>
+<table class=wiring><thead><tr><th scope=col>Flight controller</th><th scope=col>)HTML" FCC_BOARD_NAME R"HTML(</th></tr></thead><tbody><tr><td>FC TX</td><td>GPIO)HTML" FCC_STR(FCC_MSP_RX_PIN) R"HTML( (ESP RX)</td></tr><tr><td>FC RX</td><td>GPIO)HTML" FCC_STR(FCC_MSP_TX_PIN) R"HTML( (ESP TX)</td></tr><tr><td>GND</td><td>GND</td></tr></tbody></table>
 <p class=muted>Enable MSP at 115200 baud on that Betaflight UART.</p>
 <div id=mspSummary class=muted>Waiting for FC...</div>
 <hr style="border-color:#333">
