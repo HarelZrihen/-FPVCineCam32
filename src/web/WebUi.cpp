@@ -182,6 +182,8 @@ void WebUi::begin(const String& apName) {
     const uint32_t t0 = millis();
     WiFi.mode(WIFI_AP);
     const bool apOk = WiFi.softAP(apName.c_str(), "fpvcinecam32");
+    // ESP32-C3 SuperMini boards have a poorly matched antenna; at full power the AP is often invisible.
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
     Serial.printf("[%8lu ms] WIFI: softAP() returned %s in %lu ms, mode=%d, ip=%s\n",
                   (unsigned long)millis(), apOk ? "TRUE" : "FALSE",
                   (unsigned long)(millis() - t0), (int)WiFi.getMode(),
