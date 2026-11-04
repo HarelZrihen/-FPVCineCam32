@@ -12,10 +12,14 @@ public:
     void loop();
     void requestRc();
     void requestApiVersion();
+    void requestStatus();
     bool setCustomText(uint8_t slot, const String& text);
 
     bool connected() const { return lastValidFrameMs && (millis() - lastValidFrameMs < 2500); }
     bool rcFresh() const { return lastRcFrameMs && (millis() - lastRcFrameMs < 500); }
+    // Betaflight's real armed state (MSP_STATUS flight mode bit 0 = ARM), not the arm switch.
+    bool armedFresh() const { return lastStatusFrameMs && (millis() - lastStatusFrameMs < 1000); }
+    bool armed() const { return armedFlag; }
     uint8_t apiMajor() const { return apiMaj; }
     uint8_t apiMinor() const { return apiMin; }
     void onRc(RcCallback cb) { rcCallback = cb; }
@@ -34,6 +38,8 @@ private:
     RcCallback rcCallback;
     uint32_t lastValidFrameMs = 0;
     uint32_t lastRcFrameMs = 0;
+    uint32_t lastStatusFrameMs = 0;
+    bool armedFlag = false;
     uint8_t apiMaj = 0, apiMin = 0;
 
     uint16_t cachedRc[18]{};

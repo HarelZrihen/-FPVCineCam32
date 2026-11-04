@@ -54,6 +54,10 @@ static void diagLogState(const char* reason) {
 }
 
 static bool recordSwitchState(bool& valid) {
+    if (settings.recordOnArm) {
+        valid = msp.armedFresh();
+        return valid && msp.armed();
+    }
     const int idx = settings.recordChannel - 1;
     valid = idx >= 0 && (size_t)idx < msp.rcCount() && msp.rcFresh();
     if (!valid) return false;
@@ -201,7 +205,7 @@ void loop() {
         lastDiagLog = now;
         diagLogState("periodic");
     }
-    if(now-lastRcRequest>=100){ lastRcRequest=now; msp.requestRc(); }
+    if(now-lastRcRequest>=100){ lastRcRequest=now; msp.requestRc(); msp.requestStatus(); }
     if(now-lastApiRequest>=5000){ lastApiRequest=now; msp.requestApiVersion(); }
 
     bool mappingValid = false;

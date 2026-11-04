@@ -25,6 +25,7 @@ struct AppSettings {
         }
         p.name[n] = 0;
     }
+    bool recordOnArm = false;     // record while Betaflight is armed; the channel mapping is ignored
     uint8_t osdSlot = 0;          // Custom Message 0..3
     String cameraAddress = "";
     uint8_t cameraAddressType = 0;

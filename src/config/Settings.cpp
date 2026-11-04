@@ -23,6 +23,7 @@ AppSettings SettingsStore::load() {
         p.id = prefs.getInt(("pid" + n).c_str(), p.id);
         AppSettings::setPresetName(p, prefs.getString(("pnm" + n).c_str(), ""));
     }
+    s.recordOnArm = prefs.getBool("recarm", s.recordOnArm);
     s.osdSlot = prefs.getUChar("osdslot", s.osdSlot);
     s.cameraAddress = prefs.getString("camaddr", "");
     s.cameraAddressType = prefs.getUChar("camtype", 0);
@@ -49,6 +50,7 @@ void SettingsStore::save(const AppSettings& s) {
         prefs.putInt(("pid" + n).c_str(), p.id);
         prefs.putString(("pnm" + n).c_str(), p.name);
     }
+    prefs.putBool("recarm", s.recordOnArm);
     prefs.putUChar("osdslot", s.osdSlot);
     prefs.putString("camaddr", s.cameraAddress);
     prefs.putUChar("camtype", s.cameraAddressType);
