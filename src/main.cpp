@@ -21,7 +21,7 @@ static constexpr int ESP_RX_PIN = 6;
 static constexpr int ESP_TX_PIN = 7;
 static constexpr uint32_t MSP_BAUD = 115200;
 
-static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0;
+static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0, lastPresetAttempt = 0;
 static bool recordMapInitialized = false;
 static bool lastAppliedRecordState = false;
 static bool recordStopPending = false;
@@ -56,6 +56,19 @@ static bool recordSwitchState(bool& valid) {
     if (!valid) return false;
     const uint16_t value = msp.rcValue((size_t)idx);
     return settings.recordActiveHigh ? value > settings.recordThreshold : value < settings.recordThreshold;
+}
+
+// First GoPro preset whose channel is inside its range; -1 when none or no fresh RC data.
+static int32_t selectedPreset() {
+    if (!msp.rcFresh()) return -1;
+    for (int i = 0; i < settings.presetCount; ++i) {
+        const auto& p = settings.presets[i];
+        const int idx = p.channel - 1;
+        if (p.id < 0 || idx < 0 || (size_t)idx >= msp.rcCount()) continue;
+        const uint16_t value = msp.rcValue((size_t)idx);
+        if (value >= p.low && value <= p.high) return p.id;
+    }
+    return -1;
 }
 
 static String osdStatusText() {
@@ -197,6 +210,15 @@ void loop() {
     if (controlReady && (!lastControlReady || (useGoPro && goProTarget != lastGoProRcTarget))) recordMapInitialized = false;
     lastControlReady = controlReady;
     lastGoProRcTarget = goProTarget;
+
+    // Presets only load while the camera is idle and the record switch is off, so they never delay REC.
+    if (useGoPro && controlReady && !desiredRecordState && now - lastPresetAttempt >= 5000) {
+        const int32_t preset = selectedPreset();
+        if (preset >= 0 && preset != gopro->currentPreset() && gopro->snapshot().recording == GoProCamera::Recording::Standby) {
+            lastPresetAttempt = now;
+            if (gopro->loadPreset(goProTarget, preset)) diagLog("RC -> GoPro preset");
+        }
+    }
 
     if ((settings.selectedCamera == "blackmagic" || useGoPro || useDji) && mappingValid && controlReady) {
         const bool changed = !recordMapInitialized || desiredRecordState != lastAppliedRecordState;

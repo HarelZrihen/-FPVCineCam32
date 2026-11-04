@@ -13,6 +13,15 @@ AppSettings SettingsStore::load() {
     s.recordThreshold = prefs.getInt("recthr", s.recordThreshold);
     s.recordActiveHigh = prefs.getBool("rechigh", s.recordActiveHigh);
     s.recordStopDelaySec = prefs.getInt("recdelay", s.recordStopDelaySec);
+    s.presetCount = constrain(prefs.getInt("pcount", 0), 0, AppSettings::MAX_PRESETS);
+    for (int i = 0; i < s.presetCount; ++i) {
+        auto& p = s.presets[i];
+        const String n(i);
+        p.channel = prefs.getInt(("pch" + n).c_str(), p.channel);
+        p.low = prefs.getInt(("pmin" + n).c_str(), p.low);
+        p.high = prefs.getInt(("pmax" + n).c_str(), p.high);
+        p.id = prefs.getInt(("pid" + n).c_str(), p.id);
+    }
     s.osdSlot = prefs.getUChar("osdslot", s.osdSlot);
     s.cameraAddress = prefs.getString("camaddr", "");
     s.cameraAddressType = prefs.getUChar("camtype", 0);
@@ -29,6 +38,15 @@ void SettingsStore::save(const AppSettings& s) {
     prefs.putInt("recthr", s.recordThreshold);
     prefs.putBool("rechigh", s.recordActiveHigh);
     prefs.putInt("recdelay", s.recordStopDelaySec);
+    prefs.putInt("pcount", s.presetCount);
+    for (int i = 0; i < s.presetCount; ++i) {
+        const auto& p = s.presets[i];
+        const String n(i);
+        prefs.putInt(("pch" + n).c_str(), p.channel);
+        prefs.putInt(("pmin" + n).c_str(), p.low);
+        prefs.putInt(("pmax" + n).c_str(), p.high);
+        prefs.putInt(("pid" + n).c_str(), p.id);
+    }
     prefs.putUChar("osdslot", s.osdSlot);
     prefs.putString("camaddr", s.cameraAddress);
     prefs.putUChar("camtype", s.cameraAddressType);

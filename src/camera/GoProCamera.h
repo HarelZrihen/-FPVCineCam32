@@ -26,12 +26,15 @@ public:
     bool connectSaved(const String& id);
     bool renameSaved(const String& id, const String& name);
     bool setShutter(const String& id, bool on);
+    bool loadPreset(const String& id, int32_t preset);
+    bool readPreset();
+    int32_t currentPreset() const { return activePreset.load(); }
     bool busy() const { return working.load(); }
     String statusJson();
     String connectionLog();
 private:
     enum class State { Offline, Scanning, Connecting, Pairing, Connected, Ready, Failed };
-    enum class Job { Scan, Connect, Forget, Rec, Stop };
+    enum class Job { Scan, Connect, Forget, Rec, Stop, Preset, ReadPreset };
     struct Found { char name[64]; char address[18]; uint8_t type; };
     struct SavedCamera {
         char address[18]{};
@@ -86,7 +89,13 @@ private:
     void runConnect();
     void runForget();
     void runShutter(bool on);
-    std::atomic<uint32_t> shutterResponses{0};
+    std::atomic<uint32_t> shutterResponses{0}, presetResponses{0};
+    std::atomic<uint8_t> presetStatus{0xFF};
+    std::atomic<int32_t> activePreset{-1};
+    int32_t requestedPreset=-1;
+    bool controlUsable();
+    void runPreset();
+    void runReadPreset();
     void fail(const char* reason, bool retry=false);
     void log(const char* format, ...);
     void response(const uint8_t* data, size_t len);
