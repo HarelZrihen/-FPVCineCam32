@@ -128,6 +128,8 @@ Custom Message 2 shows battery and remaining recording time, for example:
 
 Setup Wi-Fi is temporary. If no client connects during the setup window, Wi-Fi shuts down while BLE camera control, MSP and OSD continue running. Wi-Fi returns after reboot.
 
+Connect to the SoftAP named `FPVCineCam32-XXXX` (XXXX is unique per device) with password `fpvcinecam32`, then browse to `http://192.168.4.1`.
+
 ## Current scope
 
 FPVCineCam32 currently exposes the camera information most useful during FPV operation:

@@ -195,11 +195,16 @@ void WebUi::begin(const String& apName) {
                   (unsigned long)millis(), apOk ? "TRUE" : "FALSE",
                   (unsigned long)(millis() - t0), (int)WiFi.getMode(),
                   WiFi.softAPIP().toString().c_str());
-    routes();server.begin();running=true;
+    routes();server.begin();
+    // Answer every DNS lookup with our own IP so the OS's captive-portal probe
+    // (Apple hotspot-detect.html, Android generate_204, Windows ncsi.txt, ...)
+    // resolves here and the sign-in page pops up automatically on connect.
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    running=true;
     Serial.printf("[%8lu ms] WIFI: web server started\n", (unsigned long)millis());
 }
-void WebUi::loop(){if(restartRequested&&(int32_t)(millis()-restartAtMs)>=0)ESP.restart();if(running)server.handleClient();if(stopRequested&&millis()>=stopAtMs){stopRequested=false;stopWifi();}}
-void WebUi::stopWifi(){if(!running)return;Serial.printf("[%8lu ms] WIFI: stopping AP, stations=%u\n",(unsigned long)millis(),(unsigned)WiFi.softAPgetStationNum());server.stop();WiFi.softAPdisconnect(true);WiFi.mode(WIFI_OFF);running=false;Serial.printf("[%8lu ms] WIFI: stopped, mode=%d\n",(unsigned long)millis(),(int)WiFi.getMode());}
+void WebUi::loop(){if(restartRequested&&(int32_t)(millis()-restartAtMs)>=0)ESP.restart();if(running){dnsServer.processNextRequest();server.handleClient();}if(stopRequested&&millis()>=stopAtMs){stopRequested=false;stopWifi();}}
+void WebUi::stopWifi(){if(!running)return;Serial.printf("[%8lu ms] WIFI: stopping AP, stations=%u\n",(unsigned long)millis(),(unsigned)WiFi.softAPgetStationNum());dnsServer.stop();server.stop();WiFi.softAPdisconnect(true);WiFi.mode(WIFI_OFF);running=false;Serial.printf("[%8lu ms] WIFI: stopped, mode=%d\n",(unsigned long)millis(),(int)WiFi.getMode());}
 
 static String presetsJson(const AppSettings& s){
     String j="[";
@@ -252,6 +257,14 @@ void WebUi::routes(){
         savedCamera=value;server.send(200,"application/json","{\"ok\":true}");restartAtMs=millis()+1000;restartRequested=true;
     });
     server.on("/",HTTP_GET,[this](){server.send_P(200,"text/html",PAGE);});
+    // Any other path is an OS captive-portal probe (Apple hotspot-detect.html,
+    // Android generate_204/gen_204, Windows ncsi.txt/connecttest.txt, etc).
+    // Redirecting instead of answering as expected is what makes the OS think
+    // it is behind a login wall and pop the sign-in page open automatically.
+    server.onNotFound([this](){
+        server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/", true);
+        server.send(302, "text/plain", "");
+    });
     server.on("/api/wifioff",HTTP_GET,[this](){server.send(200,"application/json","{\"ok\":true}");stopRequested=true;stopAtMs=millis()+250;});
     server.on("/api/status",HTTP_GET,[this](){server.send(200,"application/json",statusJson());});
     server.on("/api/scan",HTTP_GET,[this](){if(!cameraAvailable())return;String j;cam.startScan(j);server.send(200,"application/json",j);});
