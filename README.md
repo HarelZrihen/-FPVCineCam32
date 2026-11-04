@@ -63,6 +63,8 @@ Custom Message 2 shows battery and remaining video time, for example:
 
 `BAT 36% SD 2H:28`
 
+If you use preset switching, enable **Custom Message 3** too. It shows the name you gave the active preset in the settings page, for example `4K60`, or `PRESET <id>` for a preset without a name.
+
 ### Blackmagic
 
 Custom Message 1 shows camera state:

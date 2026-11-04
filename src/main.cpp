@@ -71,6 +71,16 @@ static int32_t selectedPreset() {
     return -1;
 }
 
+// OSD name of the GoPro's active preset; falls back to the ID when it has no name or row.
+static String goProPresetText() {
+    if (!settings.presetCount || !gopro) return "";
+    const int32_t active = gopro->currentPreset();
+    if (active < 0) return "PRESET --";
+    for (int i = 0; i < settings.presetCount; ++i)
+        if (settings.presets[i].id == active && settings.presets[i].name[0]) return settings.presets[i].name;
+    return "PRESET " + String((long)active);
+}
+
 static String osdStatusText() {
     const CameraState& c = camera.state();
     if (!c.connected) return "CAM OFFLINE";
@@ -244,6 +254,7 @@ void loop() {
             // Configurator Custom Message 1 and 2 use internal slots 0 and 1.
             msp.setCustomText(0,goProStatusText(state));
             msp.setCustomText(1,goProMediaText(state));
+            msp.setCustomText(2,goProPresetText());
         }else if(dji){
             const CameraState& state=dji->state();
             // Use the same two operator-facing OSD slots as GoPro.
