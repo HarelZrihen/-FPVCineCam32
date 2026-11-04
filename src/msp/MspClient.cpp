@@ -1,6 +1,7 @@
 #include "MspClient.h"
 
 static constexpr uint8_t MSP_API_VERSION = 1;
+static constexpr uint8_t MSP_STATUS = 101;
 static constexpr uint8_t MSP_RC = 105;
 static constexpr uint16_t MSP2_SET_TEXT = 0x3007;
 static constexpr uint8_t MSP2TEXT_CUSTOM_MSG_0 = 7;
@@ -29,6 +30,7 @@ void MspClient::requestRc() {
 }
 
 void MspClient::requestApiVersion() { sendV1(MSP_API_VERSION); }
+void MspClient::requestStatus() { sendV1(MSP_STATUS); }
 
 bool MspClient::setCustomText(uint8_t slot, const String& textIn) {
     if (slot > 3) return false;
@@ -135,6 +137,10 @@ void MspClient::handleFrame(uint16_t cmd, const uint8_t* data, uint16_t len) {
     lastValidFrameMs = millis();
     if (cmd == MSP_API_VERSION && len >= 3) {
         apiMaj = data[1]; apiMin = data[2];
+    } else if (cmd == MSP_STATUS && len >= 10) {
+        // Bytes 6..9 are the flight mode flags; bit 0 is BOXARM, set only while actually armed.
+        armedFlag = data[6] & 1;
+        lastStatusFrameMs = millis();
     } else if (cmd == MSP_RC && len >= 2) {
         const size_t count = len / 2;
         cachedRcCount = min(count, (size_t)18);
