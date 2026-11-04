@@ -28,6 +28,7 @@ static bool recordMapInitialized = false;
 static bool lastAppliedRecordState = false;
 static bool recordStopPending = false;
 static uint32_t recordOffSince = 0;
+static bool recordSwitchSeenOff = false;
 static bool lastControlReady = false;
 static String lastGoProRcTarget;
 static uint32_t wifiStartedAt = 0;
@@ -204,7 +205,11 @@ void loop() {
     if(now-lastApiRequest>=5000){ lastApiRequest=now; msp.requestApiVersion(); }
 
     bool mappingValid = false;
-    const bool switchOn = recordSwitchState(mappingValid);
+    bool switchOn = recordSwitchState(mappingValid);
+    // Betaflight reports AUX channels as 1500 until the receiver links, which can read as REC.
+    // Like Betaflight's arm switch, REC is ignored after power-up until the switch has been seen off.
+    if (mappingValid && !switchOn) recordSwitchSeenOff = true;
+    if (!recordSwitchSeenOff) switchOn = false;
     // Hold REC for the stop delay after the switch turns off. Turning it back on within the
     // delay just cancels the pending STOP, so the current clip continues instead of a new one.
     if (switchOn) recordStopPending = false;
