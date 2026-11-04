@@ -388,7 +388,6 @@ void GoProCamera::runReadPreset(){
     // Get Status 0x13 for status 97 (active preset ID); decoded in decodeStatus().
     const uint8_t request[]={0x02,0x13,0x61};
     if(!query->writeValue(request,sizeof(request),true))log("Preset read write failed");
-    else vTaskDelay(pdMS_TO_TICKS(500));
 }
 void GoProCamera::runForget(){
     const bool current=matches(removal,savedAddress,savedType);
@@ -488,8 +487,8 @@ void GoProCamera::decodeStatus(const uint8_t* data,size_t len){
     if(data[0]==0x13){
         // One-shot active preset read; kept apart from the registered status stream.
         if(data[1]==0 && len>=8 && data[2]==97 && data[3]==4){
-            activePreset=(int32_t)(((uint32_t)data[4]<<24)|((uint32_t)data[5]<<16)|((uint32_t)data[6]<<8)|data[7]);
-            log("Active preset ID: %ld",(long)activePreset.load());
+            const int32_t id=(int32_t)(((uint32_t)data[4]<<24)|((uint32_t)data[5]<<16)|((uint32_t)data[6]<<8)|data[7]);
+            if(activePreset.exchange(id)!=id)log("Active preset ID: %ld",(long)id);
         }else log("Active preset read failed status=%u len=%u",data[1],(unsigned)len);
         return;
     }

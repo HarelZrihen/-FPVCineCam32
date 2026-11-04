@@ -20,7 +20,9 @@ static constexpr int ESP_RX_PIN = 6;
 static constexpr int ESP_TX_PIN = 7;
 static constexpr uint32_t MSP_BAUD = 115200;
 
-static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0, lastPresetAttempt = 0;
+static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0, lastPresetAttempt = 0, lastPresetPoll = 0;
+// Preset selected by the switches (-2 until the first RC frame) and a switch change waiting to load.
+static int32_t lastSwitchPreset = -2, pendingPreset = -1;
 static bool recordMapInitialized = false;
 static bool lastAppliedRecordState = false;
 static bool lastControlReady = false;
@@ -211,13 +213,23 @@ void loop() {
     lastControlReady = controlReady;
     lastGoProRcTarget = goProTarget;
 
-    // Presets only load while the camera is idle and the record switch is off, so they never delay REC.
-    if (useGoPro && controlReady && !desiredRecordState && now - lastPresetAttempt >= 5000) {
-        const int32_t preset = selectedPreset();
-        if (preset >= 0 && preset != gopro->currentPreset() && gopro->snapshot().recording == GoProCamera::Recording::Standby) {
-            lastPresetAttempt = now;
-            if (gopro->loadPreset(goProTarget, preset)) diagLog("RC -> GoPro preset");
-        }
+    // A preset loads only when the switches move into a different range, so a preset picked on the
+    // camera stays until the pilot flips a switch. The position at boot is taken as-is.
+    if (useGoPro && msp.rcFresh()) {
+        const int32_t selected = selectedPreset();
+        if (lastSwitchPreset == -2) lastSwitchPreset = selected;
+        else if (selected != lastSwitchPreset) { lastSwitchPreset = selected; if (selected >= 0) pendingPreset = selected; }
+    }
+    // Loads wait until the camera is idle and the record switch is off, so they never delay REC.
+    const bool goProIdle = useGoPro && controlReady && !desiredRecordState && gopro->snapshot().recording == GoProCamera::Recording::Standby;
+    if (goProIdle && pendingPreset >= 0 && now - lastPresetAttempt >= 1000) {
+        lastPresetAttempt = now;
+        if (gopro->loadPreset(goProTarget, pendingPreset)) { diagLog("RC -> GoPro preset"); pendingPreset = -1; }
+    }
+    // Keep the OSD preset name in step with presets picked on the camera itself.
+    if (goProIdle && settings.presetCount && now - lastPresetPoll >= 5000) {
+        lastPresetPoll = now;
+        gopro->readPreset();
     }
 
     if ((settings.selectedCamera == "blackmagic" || useGoPro || useDji) && mappingValid && controlReady) {
