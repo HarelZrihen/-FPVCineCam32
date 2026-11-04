@@ -23,6 +23,7 @@ static constexpr uint32_t MSP_BAUD = 115200;
 static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0;
 static bool recordMapInitialized = false;
 static bool lastAppliedRecordState = false;
+static bool recordSwitchSeenOff = false;
 static bool lastControlReady = false;
 static String lastGoProRcTarget;
 static uint32_t wifiStartedAt = 0;
@@ -175,7 +176,11 @@ void loop() {
     if(now-lastApiRequest>=5000){ lastApiRequest=now; msp.requestApiVersion(); }
 
     bool mappingValid = false;
-    const bool desiredRecordState = recordSwitchState(mappingValid);
+    bool desiredRecordState = recordSwitchState(mappingValid);
+    // Betaflight reports AUX channels as 1500 until the receiver links, which can read as REC.
+    // Like Betaflight's arm switch, REC is ignored after power-up until the switch has been seen off.
+    if (mappingValid && !desiredRecordState) recordSwitchSeenOff = true;
+    if (!recordSwitchSeenOff) desiredRecordState = false;
     const CameraState& c = camera.state();
 
     // When the camera control link comes back, re-apply the physical switch position once.
