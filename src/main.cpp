@@ -80,13 +80,18 @@ static int32_t selectedPreset() {
 }
 
 // OSD name of the GoPro's active preset; falls back to the ID when it has no name or row.
+// Custom Message 3: a name typed for the active preset wins; otherwise the video mode
+// read from the camera (e.g. "4K 60 LINEAR"); otherwise the preset ID.
 static String goProPresetText() {
-    if (!settings.presetCount || !gopro) return "";
+    if (!gopro) return "";
     const int32_t active = gopro->currentPreset();
-    if (active < 0) return "PRESET --";
-    for (int i = 0; i < settings.presetCount; ++i)
-        if (settings.presets[i].id == active && settings.presets[i].name[0]) return settings.presets[i].name;
-    return "PRESET " + String((long)active);
+    if (active >= 0)
+        for (int i = 0; i < settings.presetCount; ++i)
+            if (settings.presets[i].id == active && settings.presets[i].name[0]) return settings.presets[i].name;
+    const String mode = gopro->videoModeText();
+    if (mode.length()) return mode;
+    if (!settings.presetCount) return "";
+    return active < 0 ? String("PRESET --") : "PRESET " + String((long)active);
 }
 
 static String osdStatusText() {
@@ -249,7 +254,7 @@ void loop() {
         if (gopro->loadPreset(goProTarget, pendingPreset)) { diagLog("RC -> GoPro preset"); pendingPreset = -1; }
     }
     // Keep the OSD preset name in step with presets picked on the camera itself.
-    if (goProIdle && settings.presetCount && now - lastPresetPoll >= 5000) {
+    if (goProIdle && now - lastPresetPoll >= 5000) {
         lastPresetPoll = now;
         gopro->readPreset();
     }

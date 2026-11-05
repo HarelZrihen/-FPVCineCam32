@@ -29,6 +29,8 @@ public:
     bool loadPreset(const String& id, int32_t preset);
     bool readPreset();
     int32_t currentPreset() const { return activePreset.load(); }
+    // Video mode read from the camera (settings 2/3/121), e.g. "4K 60 LINEAR"; "" until known.
+    String videoModeText() const;
     bool busy() const { return working.load(); }
     String statusJson();
     String connectionLog();
@@ -92,6 +94,7 @@ private:
     std::atomic<uint32_t> shutterResponses{0}, presetResponses{0};
     std::atomic<uint8_t> presetStatus{0xFF};
     std::atomic<int32_t> activePreset{-1};
+    std::atomic<int16_t> videoResolution{-1}, videoFps{-1}, videoLens{-1};
     int32_t requestedPreset=-1;
     bool controlUsable();
     void runPreset();

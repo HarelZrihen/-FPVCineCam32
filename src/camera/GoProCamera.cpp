@@ -388,6 +388,11 @@ void GoProCamera::runReadPreset(){
     // Get Status 0x13 for status 97 (active preset ID); decoded in decodeStatus().
     const uint8_t request[]={0x02,0x13,0x61};
     if(!query->writeValue(request,sizeof(request),true))log("Preset read write failed");
+    // Let that reply arrive before the next query: replies share one reassembly buffer.
+    vTaskDelay(pdMS_TO_TICKS(250));
+    // Get Setting Values 0x12 for video resolution (2), frame rate (3) and lens (121).
+    const uint8_t settingsRequest[]={0x04,0x12,2,3,121};
+    if(!query->writeValue(settingsRequest,sizeof(settingsRequest),true))log("Video mode read write failed");
 }
 void GoProCamera::runForget(){
     const bool current=matches(removal,savedAddress,savedType);
@@ -492,6 +497,20 @@ void GoProCamera::decodeStatus(const uint8_t* data,size_t len){
         }else log("Active preset read failed status=%u len=%u",data[1],(unsigned)len);
         return;
     }
+    if(data[0]==0x12){
+        // One-shot video mode read (setting values), also kept apart from the status stream.
+        if(data[1]!=0){log("Video mode read failed status=%u",data[1]);return;}
+        int16_t res=-1,fps=-1,lens=-1;
+        for(size_t i=2;i+2<=len;){
+            const uint8_t id=data[i],size=data[i+1];i+=2;
+            if(!size||size>4||size>len-i)break;
+            uint32_t v=0;for(uint8_t k=0;k<size;++k)v=(v<<8)|data[i+k];i+=size;
+            if(id==2)res=(int16_t)v;else if(id==3)fps=(int16_t)v;else if(id==121)lens=(int16_t)v;
+        }
+        const bool changed=videoResolution.exchange(res)!=res|videoFps.exchange(fps)!=fps|videoLens.exchange(lens)!=lens;
+        if(changed)log("Video mode: %s (res=%d fps=%d lens=%d)",videoModeText().c_str(),res,fps,lens);
+        return;
+    }
     if(data[0]!=0x53 && data[0]!=0x93){statusFault("unexpected query ID",data,len);return;}
     if(data[1]!=0){statusFault("query response status nonzero",data,len);return;}
     // Validate the complete TLV message before changing the visible state.
@@ -565,7 +584,7 @@ void GoProCamera::response(const uint8_t* data,size_t len){
 }
 void GoProCamera::Callbacks::onConnect(NimBLEClient*){owner->linked=true;owner->log("BLE connected");}
 void GoProCamera::Callbacks::onDisconnect(NimBLEClient*,int reason){
-    owner->linked=false;owner->secured=false;owner->bonded=false;owner->hardwareReady=false;owner->activePreset=-1;
+    owner->linked=false;owner->secured=false;owner->bonded=false;owner->hardwareReady=false;owner->activePreset=-1;owner->videoResolution=-1;owner->videoFps=-1;owner->videoLens=-1;
     owner->clearStatus();
     owner->queryRemaining=owner->queryReceived=0;owner->queryFragmentPending=false;
     if(owner->state!=State::Failed)owner->state=State::Offline;
@@ -605,9 +624,34 @@ String GoProCamera::escape(const char* value){
     }
     return out;
 }
+// Value tables from the Open GoPro spec (settings 2, 3 and 121).
+static const char* goProResolutionName(int v){
+    switch(v){case 1:return "4K";case 4:return "2.7K";case 6:return "2.7K 4:3";case 7:return "1440";case 9:return "1080";case 12:return "720";
+    case 18:return "4K 4:3";case 21:return "5.6K";case 24:return "5K";case 25:return "5K 4:3";case 26:return "5.3K 8:7";case 27:return "5.3K 4:3";
+    case 28:return "4K 8:7";case 31:return "8K";case 35:return "5.3K 21:9";case 36:return "4K 21:9";case 37:return "4K 1:1";case 38:return "900";
+    case 39:return "4K SPH";case 100:return "5.3K";case 107:return "5.3K 8:7";case 108:return "4K 8:7";case 109:return "4K 9:16";
+    case 110:return "1080 9:16";case 111:return "2.7K 4:3";case 112:return "4K 4:3";case 113:return "5.3K 4:3";default:return "";}
+}
+static int goProFps(int v){
+    switch(v){case 0:return 240;case 1:return 120;case 2:return 100;case 3:return 90;case 5:return 60;case 6:return 50;case 8:return 30;
+    case 9:return 25;case 10:return 24;case 13:return 200;case 15:return 400;case 16:return 360;case 17:return 300;default:return 0;}
+}
+static const char* goProLensName(int v){
+    switch(v){case 0:return "WIDE";case 2:return "NARROW";case 3:return "SUPERVIEW";case 4:return "LINEAR";case 7:return "MAX SV";
+    case 8:return "LINEAR HL";case 9:return "HYPERVIEW";case 10:return "LINEAR LOCK";case 11:return "MAX HV";case 12:return "ULTRA SV";
+    case 13:return "ULTRA WIDE";case 14:return "ULTRA LINEAR";case 104:return "ULTRA HV";default:return "";}
+}
+String GoProCamera::videoModeText() const{
+    String out=goProResolutionName(videoResolution.load());
+    const int fps=goProFps(videoFps.load());
+    if(fps){if(out.length())out+=' ';out+=String(fps);}
+    const char* lens=goProLensName(videoLens.load());
+    if(*lens){if(out.length())out+=' ';out+=lens;}
+    return out;
+}
 String GoProCamera::statusJson(){
     static const char* names[]={"Offline","Scanning","Connecting","Pairing","Connected","Control ready","Connection failed"};
-    String out="{\"status\":\""+String(names[(unsigned)state.load()])+"\",\"busy\":"+(working?String("true"):String("false"))+",\"connected\":"+(linked?String("true"):String("false"))+",\"bonded\":"+(bonded?String("true"):String("false"))+",\"encrypted\":"+(secured?String("true"):String("false"))+",\"preset\":"+String((long)activePreset.load())+",\"cameras\":[";
+    String out="{\"status\":\""+String(names[(unsigned)state.load()])+"\",\"busy\":"+(working?String("true"):String("false"))+",\"connected\":"+(linked?String("true"):String("false"))+",\"bonded\":"+(bonded?String("true"):String("false"))+",\"encrypted\":"+(secured?String("true"):String("false"))+",\"preset\":"+String((long)activePreset.load())+",\"videoMode\":\""+videoModeText()+"\""+",\"cameras\":[";
     const auto values=snapshot();
     const auto cards=savedSnapshot();
     char active[18];uint8_t type;

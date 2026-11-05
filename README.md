@@ -73,7 +73,7 @@ Custom Message 2 shows battery and remaining video time, for example:
 
 `BAT 36% SD 2H:28`
 
-If you use preset switching, enable **Custom Message 3** too. It shows the name you gave the active preset in the settings page, for example `4K60`, or `PRESET <id>` for a preset without a name.
+Enable **Custom Message 3** to see the video mode read from the camera: resolution, frame rate and lens, for example `4K 60 LINEAR`. It refreshes every 5 seconds while the camera is not recording. If you typed a name for the active preset in the settings page, that name is shown instead.
 
 ### Blackmagic
 
