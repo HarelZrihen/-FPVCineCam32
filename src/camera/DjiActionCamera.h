@@ -49,6 +49,7 @@ private:
     void handleFrame(const uint8_t*,size_t);
     void setModel(uint32_t id);
     void updateVideoMode(uint8_t mode,uint8_t res,uint8_t fps,uint8_t eis);
+    uint8_t lastCameraMode=0xFF;
     void log(const char* fmt,...);
     static uint16_t crc16(const uint8_t*,size_t);
     static uint32_t crc32(const uint8_t*,size_t);

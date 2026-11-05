@@ -92,7 +92,17 @@ void DjiActionCamera::handleFrame(const uint8_t*f,size_t len){
         }
         return;
     }
-    if(set==0x1D&&id==0x02&&(type&0x20)==0&&n>=38){uint8_t mode=p[0],status=p[1];uint16_t recordTime=read16(p+5);bool videoMode=(mode==0x00||mode==0x01||mode==0x02||mode==0x0A||mode==0x28||mode==0x38||mode==0x3A||mode==0x41||mode==0x43||mode==0x44||mode==0x4A);camState.recording=videoMode&&status==0x03&&(recordTime>0||mode!=0x05);remainingSeconds=read32(p+23);char t[24];snprintf(t,sizeof(t),"%luH:%02lu",(unsigned long)(remainingSeconds/3600),(unsigned long)((remainingSeconds%3600)/60));camState.mediaRemaining=t;camState.batteryPercent=p[37];camState.ready=true;camState.controlReady=true;camState.status=camState.recording?"DJI REC":"DJI READY";updateVideoMode(mode,p[2],p[3],p[4]);return;}
+    if(set==0x1D&&id==0x02&&(type&0x20)==0&&n>=38){uint8_t mode=p[0],status=p[1];uint16_t recordTime=read16(p+5);bool videoMode=(mode==0x00||mode==0x01||mode==0x02||mode==0x0A||mode==0x28||mode==0x38||mode==0x3A||mode==0x41||mode==0x43||mode==0x44||mode==0x4A);camState.recording=videoMode&&status==0x03&&(recordTime>0||mode!=0x05);remainingSeconds=read32(p+23);char t[24];snprintf(t,sizeof(t),"%luH:%02lu",(unsigned long)(remainingSeconds/3600),(unsigned long)((remainingSeconds%3600)/60));camState.mediaRemaining=t;camState.batteryPercent=p[37];camState.ready=true;camState.controlReady=true;camState.status=camState.recording?"DJI REC":"DJI READY";lastCameraMode=mode;updateVideoMode(mode,p[2],p[3],p[4]);return;}
+    // 1D06 (new camera status push): ASCII mode name at 2 (length at 1) and parameters at 25
+    // (length at 24). Follows 1D02 when camera_mode > 0x34; only used for those modes.
+    if(set==0x1D&&id==0x06&&(type&0x20)==0&&n>=46&&p[0]==0x01&&p[23]==0x02){
+        if(lastCameraMode<=0x34)return;
+        auto field=[&](size_t off,uint8_t len){String s;for(uint8_t i=0;i<len&&i<20;++i){const char c=(char)p[off+i];if(!c)break;s+=(c>=32&&c<127)?c:' ';}s.trim();return s;};
+        String m=field(2,p[1]);const String param=field(25,p[24]);if(param.length()){if(m.length())m+=' ';m+=param;}
+        m.toUpperCase();if(m.length()>31)m.remove(31);
+        if(m!=camState.videoMode){camState.videoMode=m;Serial.printf("[DJI] Video mode %s (1D06)\n",m.c_str());}
+        return;
+    }
     if(set==0x1D&&id==0x03&&(type&0x20)&&n>=1)camState.lastWrite=p[0]==0?"DJI RECORD ACK OK":"DJI RECORD ACK FAIL";
 }
 
@@ -104,12 +114,14 @@ void DjiActionCamera::updateVideoMode(uint8_t mode,uint8_t res,uint8_t fps,uint8
     switch(mode){
     case 0x01:case 0x28:{  // Video, SuperNight
         m=djiformat::videoText(res,fps);if(mode==0x28)m="NIGHT "+m;if(*e){m+=' ';m+=e;}break;}
-    case 0x00:{  // Slow motion: fps_idx is the multiplier
-        m=djiformat::resolution(res);if(m.length())m+=' ';m+="SLOMO "+String(fps)+"X";break;}
+    case 0x00:{  // Slow motion: fps_idx is still the frame rate; DJI shows multiplier = frame rate / 30
+        m=djiformat::resolution(res);const int f=djiformat::fps(fps);m+=" SLOMO";if(f>=60)m+=" "+String(f/30)+"X";break;}
     case 0x02:m="TIMELAPSE";break;
     case 0x0A:m="HYPERLAPSE";break;
     case 0x05:m="PHOTO";break;
-    default:m="";break;  // Osmo 360 modes (> 0x34) report their name in 1D06, not decoded here
+    default:  // Modes > 0x34 (Osmo 360) report name and parameters in 1D06 instead
+        if(mode>0x34)return;
+        m="";break;
     }
     m.trim();
     if(m!=camState.videoMode){camState.videoMode=m;Serial.printf("[DJI] Video mode %s (mode=0x%02X res=%u fps=%u eis=%u)\n",m.c_str(),mode,res,fps,eis);}

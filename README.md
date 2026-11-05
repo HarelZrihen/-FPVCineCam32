@@ -99,7 +99,7 @@ Custom Message 2 shows battery and remaining recording time, for example:
 
 `BAT 36% SD 2H:28`
 
-Custom Message 3 shows the video mode reported by the camera, for example `4K 60 RS+` (resolution, frame rate, stabilization), `4K SLOMO 4X`, `TIMELAPSE` or `PHOTO`. Action 4/5 Pro/6/360 report it in their status; the Osmo Nano reports resolution and frame rate. On the Action 2 this is experimental and may stay blank.
+Custom Message 3 shows the video mode reported by the camera, for example `4K 60 RS+` (resolution, frame rate, stabilization), `4K SLOMO 4X`, `TIMELAPSE` or `PHOTO`. Action 4/5 Pro/6/360 report it in their status, and Osmo 360-only modes show the mode name the camera sends; the Osmo Nano reports resolution and frame rate. On the Action 2 this is experimental and may stay blank.
 
 ## GoPro notes
 
