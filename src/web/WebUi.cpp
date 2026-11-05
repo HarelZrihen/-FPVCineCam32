@@ -18,7 +18,7 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 <h1>FPVCineCam32</h1><div class=sub>Camera control + Betaflight MSP</div>
 
 <div class=card><h3>Camera system</h3>
-<select id=selectedCamera aria-label="Camera"><option value=blackmagic>Blackmagic Pocket Cinema Camera 4K</option><option value=gopro>GoPro</option><option value=dji>DJI Osmo Action 4/5 Pro/6/360</option><option value=dji2>DJI Osmo Action 2</option></select>
+<select id=selectedCamera aria-label="Camera"><option value=blackmagic>Blackmagic Pocket Cinema Camera 4K</option><option value=gopro>GoPro</option><option value=dji>DJI Osmo Action 4/5 Pro/6/360</option><option value=dji2>DJI Osmo Action 2</option><option value=djinano>DJI Osmo Nano</option></select>
 <button id=saveCamera onclick=saveCamera()>Save &amp; Restart</button>
 <p id=cameraSaveStatus class=muted role=status></p>
 <p id=restartHelp class=muted hidden>Reconnect to FPVCineCam32 Wi-Fi if required, then reopen this page.</p>
@@ -43,7 +43,7 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 <p id=gpCopyStatus class=muted role=status></p>
 </div>
 
-<div class=card id=djiCard hidden><h3>DJI Osmo Action</h3>
+<div class=card id=djiCard hidden><h3>DJI Osmo</h3>
 <div id=djiBadge class="statusBadge statusOffline">Camera disconnected</div>
 <div id=djiSummary class=muted>Offline</div>
 <p><button id=djiScan onclick=djiScan()>Scan for cameras</button><span id=djiCams></span></p>
@@ -149,7 +149,7 @@ async function copyGoProLog(){el('gpCopy').disabled=true;try{const response=awai
 function cameraLine(c){const link=c.connected?'Connected':'Offline';const ready=c.controlReady?'Control ready':'Control not ready';const rec=c.recording?'RECORDING':'Standby';return `${link} | ${ready} | ${rec}`;}
 function drawDji(c){
   const linked=c.connected&&c.controlReady;el('djiBadge').className='statusBadge '+(linked?'statusOnline':'statusOffline');el('djiBadge').textContent=linked?'Camera connected':'Camera disconnected';
-  let line=c.status||'Offline';if(c.model)line+=' | '+c.model;if(c.batteryPercent>=0)line+=' | Battery '+c.batteryPercent+'%';if(c.mediaRemaining&&c.mediaRemaining!=='--')line+=' | SD '+c.mediaRemaining;el('djiSummary').textContent=line;
+  let line=c.status||'Offline';if(c.model)line+=' | '+c.model;if(c.batteryPercent>=0)line+=' | Battery '+c.batteryPercent+'%';if(c.mediaRemaining&&c.mediaRemaining!=='--')line+=' | SD '+c.mediaRemaining;if(c.videoMode)line+=' | '+c.videoMode;el('djiSummary').textContent=line;
 }
 async function djiScan(){el('djiScan').disabled=true;el('djiCams').textContent='Scanning...';el('djiMessage').textContent='';try{const x=await api('/api/dji/scan',{method:'POST'});el('djiCams').replaceChildren();if(!x.length){el('djiCams').textContent=' No DJI cameras found';return;}x.forEach(c=>{const b=document.createElement('button');b.textContent=c.name||('DJI '+c.address);b.onclick=()=>djiConnect(c.address,c.type);el('djiCams').appendChild(b);});}catch(e){el('djiMessage').textContent='Scan failed: '+e.message;}finally{el('djiScan').disabled=false;}}
 async function djiConnect(address,type){el('djiMessage').textContent='Connecting...';try{await api('/api/dji/connect',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({address,type}).toString()});el('djiMessage').textContent='Connection queued.';}catch(e){el('djiMessage').textContent='Connect failed: '+e.message;}setTimeout(refresh,500);}
@@ -223,7 +223,7 @@ String WebUi::statusJson(){
     if(dji){
         const CameraState& d=dji->state();
         j.remove(j.length()-1);
-        j += ",\"dji\":{\"status\":\""+d.status+"\",\"model\":\""+d.model+"\",\"connected\":"+String(d.connected?"true":"false")+",\"paired\":"+String(d.paired?"true":"false")+",\"ready\":"+String(d.ready?"true":"false")+",\"controlReady\":"+String(d.controlReady?"true":"false")+",\"recording\":"+String(d.recording?"true":"false")+",\"batteryPercent\":"+String(d.batteryPercent)+",\"mediaRemaining\":\""+d.mediaRemaining+"\",\"incomingPackets\":"+String(d.incomingPackets)+",\"lastIncoming\":\""+d.lastIncoming+"\",\"lastCommand\":\""+d.lastCommand+"\",\"lastWrite\":\""+d.lastWrite+"\"}}";
+        j += ",\"dji\":{\"status\":\""+d.status+"\",\"model\":\""+d.model+"\",\"connected\":"+String(d.connected?"true":"false")+",\"paired\":"+String(d.paired?"true":"false")+",\"ready\":"+String(d.ready?"true":"false")+",\"controlReady\":"+String(d.controlReady?"true":"false")+",\"recording\":"+String(d.recording?"true":"false")+",\"batteryPercent\":"+String(d.batteryPercent)+",\"mediaRemaining\":\""+d.mediaRemaining+"\",\"videoMode\":\""+d.videoMode+"\",\"incomingPackets\":"+String(d.incomingPackets)+",\"lastIncoming\":\""+d.lastIncoming+"\",\"lastCommand\":\""+d.lastCommand+"\",\"lastWrite\":\""+d.lastWrite+"\"}}";
     }
     return j;
 }
@@ -250,7 +250,7 @@ void WebUi::routes(){
 
     server.on("/api/selectCamera",HTTP_POST,[this](){
         const String value=server.arg("camera");
-        if(value!="blackmagic"&&value!="gopro"&&value!="dji"&&value!="dji2"){server.send(400,"application/json","{\"ok\":false}");return;}
+        if(value!="blackmagic"&&value!="gopro"&&value!="dji"&&value!="dji2"&&value!="djinano"){server.send(400,"application/json","{\"ok\":false}");return;}
         const bool djiRecording=dji&&dji->state().recording;
         if(restartRequested||cam.state().recording||cam.waitingForPasskey()||djiRecording){server.send(409,"application/json","{\"ok\":false}");return;}
         if(!prefs.selectCamera(value)){server.send(500,"application/json","{\"ok\":false}");return;}

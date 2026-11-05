@@ -12,6 +12,7 @@ struct CameraState {
     float fps = 0.0f;
     String timecode = "--:--:--:--";
     String mediaRemaining = "--";
+    String videoMode = "";  // e.g. "4K 60", empty when the camera does not report it
     int activeMediaSlot = 0;
     String mediaSlotRemaining[3] = {"--", "--", "--"};
     String incomingSubscription = "none";

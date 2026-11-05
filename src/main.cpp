@@ -15,7 +15,7 @@ AppSettings settings;
 MspClient msp(FcSerial);
 BlackmagicCamera camera;
 GoProCamera* gopro = nullptr;
-ICameraBackend* dji = nullptr;  // DJI R SDK (Action 4+) or DUML (Action 2)
+ICameraBackend* dji = nullptr;  // DJI R SDK (Action 4+) or DUML (Action 2, Osmo Nano)
 WebUi* web = nullptr;
 
 static constexpr int ESP_RX_PIN = FCC_MSP_RX_PIN;
@@ -127,7 +127,8 @@ static String goProMediaText(const GoProCamera::Snapshot& c) {
 static String djiStatusText(const CameraState& c) {
     if(!c.connected) return "CAM OFF";
     if(!c.controlReady) return "CAM CONNECT";
-    return c.recording ? "CAM REC" : "CAM READY";
+    if(c.recording) return "CAM REC";
+    return c.ready ? "CAM READY" : "CAM SLEEP";  // Osmo Nano reports when it is asleep
 }
 static String djiMediaText(const CameraState& c) {
     const String battery=c.batteryPercent>=0?String(c.batteryPercent)+"%":String("--");
@@ -157,6 +158,7 @@ void setup() {
     if (settings.selectedCamera == "gopro") gopro = new GoProCamera();
     if (settings.selectedCamera == "dji") dji = new DjiActionCamera();
     if (settings.selectedCamera == "dji2") dji = new DjiAction2Camera();
+    if (settings.selectedCamera == "djinano") dji = new DjiAction2Camera(true);
     web = new WebUi(settings,settingsStore,camera,msp,gopro,dji);
     Serial.printf("[%8lu ms] WIFI: starting SoftAP %s\n", (unsigned long)millis(), ap);
     web->begin(ap);
@@ -282,6 +284,8 @@ void loop() {
             // Use the same two operator-facing OSD slots as GoPro.
             msp.setCustomText(0,djiStatusText(state));
             msp.setCustomText(1,djiMediaText(state));
+            // Custom Message 3: video mode when the camera reports it (Osmo Nano).
+            if(state.videoMode.length())msp.setCustomText(2,state.videoMode);
         }else{
         msp.setCustomText(settings.osdSlot, osdStatusText());
         // The next Custom Message slot carries decoded Pocket 4K remaining

@@ -124,6 +124,14 @@ Custom Message 2 shows battery and remaining recording time, for example:
 - Battery level and remaining recording time are shown in the OSD where available.
 - Forget camera removes only the saved DJI camera connection.
 
+## DJI Osmo Nano notes
+
+- Select **DJI Osmo Nano** as the camera system. The Nano uses the same DUML protocol as the Action 2, not the DJI R SDK.
+- REC/STOP, record state, battery and remaining SD time are read from the camera.
+- Custom Message 3 shows the active video mode (resolution and frame rate), for example `4K 60`.
+- The Nano records a corrupted low-FPS clip if recording starts while it is asleep. FPVCineCam32 holds REC until the camera is awake in photo or video mode; the OSD shows `CAM SLEEP` meanwhile.
+- Not yet tested on Nano hardware with FPVCineCam32.
+
 ## Setup Wi-Fi
 
 Setup Wi-Fi is temporary. If no client connects during the setup window, Wi-Fi shuts down while BLE camera control, MSP and OSD continue running. Wi-Fi returns after reboot.
