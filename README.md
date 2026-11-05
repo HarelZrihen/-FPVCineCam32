@@ -126,6 +126,15 @@ Custom Message 3 shows the video mode reported by the camera, for example `4K 60
 - Battery level and remaining recording time are shown in the OSD where available.
 - Forget camera removes only the saved DJI camera connection.
 
+## DJI custom mode switch (Action 4 / 5 Pro / 6 / Osmo 360)
+
+Switch between resolution/FPS setups from a radio switch, like the GoPro presets:
+
+1. On the camera, save each setup as a Custom mode (C1–C5) and add those modes to the camera's quick-switch (QS) list.
+2. In the Web UI **Preset switch** card, add a row per setup: type the custom mode number (1–5 for C1–C5, 0 for the General mode), pick the channel with AUTO and drag the range.
+
+DJI has no command to load a custom mode directly, so FPVCineCam32 presses the camera's QS button over Bluetooth until the camera reports the chosen mode. Each step takes about 2.5 seconds. It only switches while not recording, REC cancels a switch in progress, and it stops after one loop if the mode is not in the QS list. A name typed for the row is shown on Custom Message 3. Experimental: not yet tested on DJI hardware.
+
 ## DJI Osmo Nano notes
 
 - Select **DJI Osmo Nano** as the camera system. The Nano uses the same DUML protocol as the Action 2, not the DJI R SDK.

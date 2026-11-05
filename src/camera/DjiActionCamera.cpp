@@ -92,7 +92,7 @@ void DjiActionCamera::handleFrame(const uint8_t*f,size_t len){
         }
         return;
     }
-    if(set==0x1D&&id==0x02&&(type&0x20)==0&&n>=38){uint8_t mode=p[0],status=p[1];uint16_t recordTime=read16(p+5);bool videoMode=(mode==0x00||mode==0x01||mode==0x02||mode==0x0A||mode==0x28||mode==0x38||mode==0x3A||mode==0x41||mode==0x43||mode==0x44||mode==0x4A);camState.recording=videoMode&&status==0x03&&(recordTime>0||mode!=0x05);remainingSeconds=read32(p+23);char t[24];snprintf(t,sizeof(t),"%luH:%02lu",(unsigned long)(remainingSeconds/3600),(unsigned long)((remainingSeconds%3600)/60));camState.mediaRemaining=t;camState.batteryPercent=p[37];camState.ready=true;camState.controlReady=true;camState.status=camState.recording?"DJI REC":"DJI READY";lastCameraMode=mode;updateVideoMode(mode,p[2],p[3],p[4]);return;}
+    if(set==0x1D&&id==0x02&&(type&0x20)==0&&n>=38){uint8_t mode=p[0],status=p[1];uint16_t recordTime=read16(p+5);bool videoMode=(mode==0x00||mode==0x01||mode==0x02||mode==0x0A||mode==0x28||mode==0x38||mode==0x3A||mode==0x41||mode==0x43||mode==0x44||mode==0x4A);camState.recording=videoMode&&status==0x03&&(recordTime>0||mode!=0x05);remainingSeconds=read32(p+23);char t[24];snprintf(t,sizeof(t),"%luH:%02lu",(unsigned long)(remainingSeconds/3600),(unsigned long)((remainingSeconds%3600)/60));camState.mediaRemaining=t;camState.batteryPercent=p[37];camState.ready=true;camState.controlReady=true;camState.status=camState.recording?"DJI REC":"DJI READY";lastCameraMode=mode;userMode=p[27]<=5?(int8_t)p[27]:0;nextModeFlag=p[29];lastStatusMs=millis();updateVideoMode(mode,p[2],p[3],p[4]);return;}
     // 1D06 (new camera status push): ASCII mode name at 2 (length at 1) and parameters at 25
     // (length at 24). Follows 1D02 when camera_mode > 0x34; only used for those modes.
     if(set==0x1D&&id==0x06&&(type&0x20)==0&&n>=46&&p[0]==0x01&&p[23]==0x02){
@@ -103,6 +103,7 @@ void DjiActionCamera::handleFrame(const uint8_t*f,size_t len){
         if(m!=camState.videoMode){camState.videoMode=m;Serial.printf("[DJI] Video mode %s (1D06)\n",m.c_str());}
         return;
     }
+    if(set==0x00&&id==0x11&&(type&0x20)&&n>=1){if(p[0]!=0)log("QS key rejected, code %u",p[0]);return;}
     if(set==0x1D&&id==0x03&&(type&0x20)&&n>=1)camState.lastWrite=p[0]==0?"DJI RECORD ACK OK":"DJI RECORD ACK FAIL";
 }
 
@@ -126,8 +127,40 @@ void DjiActionCamera::updateVideoMode(uint8_t mode,uint8_t res,uint8_t fps,uint8
     m.trim();
     if(m!=camState.videoMode){camState.videoMode=m;Serial.printf("[DJI] Video mode %s (mode=0x%02X res=%u fps=%u eis=%u)\n",m.c_str(),mode,res,fps,eis);}
 }
-bool DjiActionCamera::setRecording(bool on){if(!camState.controlReady)return false;uint8_t p[9]{};p[0]=cameraDeviceId&0xFF;p[1]=cameraDeviceId>>8;p[2]=cameraDeviceId>>16;p[3]=cameraDeviceId>>24;p[4]=on?0:1;camState.lastCommand=on?"REC":"STOP";camState.lastWrite=sendFrame(0x1D,0x03,0x02,p,sizeof(p))?"sent":"failed";return camState.lastWrite=="sent";}
+bool DjiActionCamera::setRecording(bool on){if(!camState.controlReady)return false;if(on)cancelPreset("REC requested");uint8_t p[9]{};p[0]=cameraDeviceId&0xFF;p[1]=cameraDeviceId>>8;p[2]=cameraDeviceId>>16;p[3]=cameraDeviceId>>24;p[4]=on?0:1;camState.lastCommand=on?"REC":"STOP";camState.lastWrite=sendFrame(0x1D,0x03,0x02,p,sizeof(p))?"sent":"failed";return camState.lastWrite=="sent";}
+// DJI documents no command to load a custom mode, but it does document the QS key (0011,
+// key_code 0x02: "each press changes to the next mode") and reports the active user_mode (1D02
+// byte 27). So: press QS, wait for the camera to leave its pre-switch screen
+// (camera_mode_next_flag == camera_mode) and report a fresh status, then check user_mode and
+// press again if needed. Stops when the target is reached, after a full loop of the QS list
+// (target not in the list), or after QS_MAX presses.
+static constexpr uint32_t QS_SETTLE_MS=2500;
+static constexpr uint8_t QS_MAX=12;
+bool DjiActionCamera::requestPreset(int32_t mode){
+    if(mode<0||mode>5||!camState.controlReady||camState.recording)return false;
+    if(userMode==mode&&targetUserMode<0)return true;  // already there
+    targetUserMode=(int8_t)mode;qsPresses=0;lastQsMs=millis()-QS_SETTLE_MS;startCameraMode=lastCameraMode;startUserMode=userMode;
+    log("Switching to %s (now %s)",mode?("C"+String(mode)).c_str():"General",userMode>0?("C"+String(userMode)).c_str():"General");
+    return true;
+}
+void DjiActionCamera::cancelPreset(const char* why){
+    if(targetUserMode<0)return;
+    log("Custom mode switch stopped: %s",why);targetUserMode=-1;
+}
+void DjiActionCamera::stepPreset(uint32_t now){
+    if(targetUserMode<0)return;
+    if(!camState.controlReady){cancelPreset("camera disconnected");return;}
+    if(camState.recording)return;  // never step while recording
+    // Wait for a status push that came after the camera finished switching.
+    if(nextModeFlag!=lastCameraMode||(int32_t)(lastStatusMs-lastQsMs)<(int32_t)QS_SETTLE_MS)return;
+    if(userMode==targetUserMode){log("Custom mode reached after %u QS press(es)",qsPresses);targetUserMode=-1;return;}
+    if(qsPresses>0&&lastCameraMode==startCameraMode&&userMode==startUserMode){cancelPreset("target is not in the camera's quick-switch list");return;}
+    if(qsPresses>=QS_MAX){cancelPreset("too many QS presses");return;}
+    const uint8_t key[4]={0x02,0x01,0x00,0x00};  // QS button, key event, short press
+    if(sendFrame(0x00,0x11,0x02,key,sizeof(key))){qsPresses++;lastQsMs=now;camState.lastCommand="QS";}
+}
 void DjiActionCamera::loop(){
+    stepPreset(millis());
     if(pendingConnectionResponse){
         const uint16_t s=pendingConnectionSeq;pendingConnectionResponse=false;sendConnectionResponse(s);approvedBefore=true;prefs.putBool("approved",true);camState.paired=true;camState.ready=true;camState.controlReady=true;camState.status="DJI READY";subscribeStatus();
     }
@@ -137,4 +170,4 @@ void DjiActionCamera::loop(){
 void DjiActionCamera::disconnect(){reconnectWanted=false;if(client&&client->isConnected())client->disconnect();}
 void DjiActionCamera::forgetPairing(){disconnect();prefs.remove("address");prefs.remove("type");prefs.remove("approved");savedAddress="";approvedBefore=false;pendingConnectionResponse=false;camState=CameraState{};camState.status="DJI OFFLINE";camState.model="DJI Osmo";camState.protocolVersion="DJI R SDK";log("DJI saved target cleared; unrelated BLE bonds untouched");}
 void DjiActionCamera::ClientCallbacks::onConnect(NimBLEClient*){o->camState.connected=true;o->camState.status="DJI BLE LINK";}
-void DjiActionCamera::ClientCallbacks::onDisconnect(NimBLEClient*,int r){o->pendingConnectionResponse=false;o->camState.videoMode="";o->camState.connected=false;o->camState.controlReady=false;o->camState.ready=false;o->camState.recording=false;o->camState.status="DJI OFFLINE";o->log("BLE disconnected reason=%d",r);if(o->savedAddress.length()){o->reconnectWanted=true;o->nextReconnectMs=millis()+3000;}}
+void DjiActionCamera::ClientCallbacks::onDisconnect(NimBLEClient*,int r){o->pendingConnectionResponse=false;o->camState.videoMode="";o->userMode=-1;o->targetUserMode=-1;o->camState.connected=false;o->camState.controlReady=false;o->camState.ready=false;o->camState.recording=false;o->camState.status="DJI OFFLINE";o->log("BLE disconnected reason=%d",r);if(o->savedAddress.length()){o->reconnectWanted=true;o->nextReconnectMs=millis()+3000;}}

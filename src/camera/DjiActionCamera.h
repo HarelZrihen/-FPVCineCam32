@@ -20,6 +20,10 @@ public:
     bool submitPasskey(uint32_t) override { return false; }
     bool waitingForPasskey() const override { return false; }
     const CameraState& state() const override { return camState; }
+    // Presets are the camera's user modes: 0 = General, 1..5 = Custom modes C1..C5.
+    bool requestPreset(int32_t userMode) override;
+    int32_t currentPreset() const override { return userMode; }
+    bool presetBusy() const override { return targetUserMode>=0; }
     void setSavedTarget(const String& address,uint8_t type) { savedAddress=address; savedAddressType=type; }
     String connectionLog() const { return logText; }
 private:
@@ -50,6 +54,12 @@ private:
     void setModel(uint32_t id);
     void updateVideoMode(uint8_t mode,uint8_t res,uint8_t fps,uint8_t eis);
     uint8_t lastCameraMode=0xFF;
+    // Custom-mode switching by stepping the quick-switch (QS) key until the status reports it.
+    int8_t userMode=-1,targetUserMode=-1;
+    uint8_t nextModeFlag=0xFF,qsPresses=0,startCameraMode=0xFF;int8_t startUserMode=-1;
+    uint32_t lastQsMs=0,lastStatusMs=0;
+    void stepPreset(uint32_t now);
+    void cancelPreset(const char* why);
     void log(const char* fmt,...);
     static uint16_t crc16(const uint8_t*,size_t);
     static uint32_t crc32(const uint8_t*,size_t);

@@ -242,7 +242,8 @@ void loop() {
 
     // A preset loads only when the switches move into a different range, so a preset picked on the
     // camera stays until the pilot flips a switch. The position at boot is taken as-is.
-    if (useGoPro && msp.rcFresh()) {
+    const bool useDjiPresets = settings.selectedCamera == "dji" && dji;  // R SDK cameras only
+    if ((useGoPro || useDjiPresets) && msp.rcFresh()) {
         const int32_t selected = selectedPreset();
         if (lastSwitchPreset == -2) lastSwitchPreset = selected;
         else if (selected != lastSwitchPreset) { lastSwitchPreset = selected; if (selected >= 0) pendingPreset = selected; }
@@ -252,6 +253,11 @@ void loop() {
     if (goProIdle && pendingPreset >= 0 && now - lastPresetAttempt >= 1000) {
         lastPresetAttempt = now;
         if (gopro->loadPreset(goProTarget, pendingPreset)) { diagLog("RC -> GoPro preset"); pendingPreset = -1; }
+    }
+    const bool djiIdle = useDjiPresets && controlReady && !desiredRecordState && !dji->state().recording;
+    if (djiIdle && pendingPreset >= 0 && now - lastPresetAttempt >= 1000) {
+        lastPresetAttempt = now;
+        if (dji->requestPreset(pendingPreset)) { diagLog("RC -> DJI custom mode"); pendingPreset = -1; }
     }
     // Keep the OSD preset name in step with presets picked on the camera itself.
     if (goProIdle && now - lastPresetPoll >= 5000) {
@@ -289,8 +295,11 @@ void loop() {
             // Use the same two operator-facing OSD slots as GoPro.
             msp.setCustomText(0,djiStatusText(state));
             msp.setCustomText(1,djiMediaText(state));
-            // Custom Message 3: video mode when the camera reports it (blank otherwise).
-            msp.setCustomText(2,state.videoMode);
+            // Custom Message 3: name typed for the active custom mode, else the video mode.
+            String modeText=state.videoMode;
+            const int32_t active=dji->currentPreset();
+            if(active>=0)for(int i=0;i<settings.presetCount;++i)if(settings.presets[i].id==active&&settings.presets[i].name[0]){modeText=settings.presets[i].name;break;}
+            msp.setCustomText(2,modeText);
         }else{
         msp.setCustomText(settings.osdSlot, osdStatusText());
         // The next Custom Message slot carries decoded Pocket 4K remaining

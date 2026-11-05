@@ -40,4 +40,9 @@ public:
     virtual bool submitPasskey(uint32_t pin) = 0;
     virtual bool waitingForPasskey() const = 0;
     virtual const CameraState& state() const = 0;
+    // Optional preset switching (switch-driven, like the GoPro presets). The ID meaning is
+    // backend-specific; backends without presets keep these defaults.
+    virtual bool requestPreset(int32_t) { return false; }
+    virtual int32_t currentPreset() const { return -1; }
+    virtual bool presetBusy() const { return false; }
 };

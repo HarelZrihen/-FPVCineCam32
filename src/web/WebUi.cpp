@@ -33,14 +33,17 @@ button,input,select{font-size:16px;padding:10px;margin:5px 5px 5px 0;border-radi
 <p id=gpStatus role=status>Offline</p>
 <h4>Saved cameras</h4><div id=gpSaved></div>
 <p id=gpStorageError class=warn hidden>Saved camera list could not be read or saved. Copy the log before restarting.</p>
-<h4>Preset switch</h4>
-<p class=muted>Pick a preset on the camera, press Read, and type its ID into a row. Leave the channel on AUTO and flip the switch on your radio to pick it, then drag the range. The preset loads when the white marker is inside the range, only while not recording.</p>
-<p>Current preset ID: <b id=gpPreset>--</b> <button onclick=gpReadPreset()>Read</button><br><span class=muted>Video mode: <b id=gpMode>--</b></span></p>
-<div id=presetModes></div>
-<button id=addPreset onclick=addPreset()>Add preset</button><button onclick=savePresets()>Save presets</button><span id=presetMsg class=muted></span>
 <button id=gpCopy onclick=copyGoProLog()>Copy log</button>
 <textarea id=gpLog readonly aria-label="GoPro connection log" hidden style="box-sizing:border-box;width:100%;height:180px;background:#111;color:#eee"></textarea>
 <p id=gpCopyStatus class=muted role=status></p>
+</div>
+
+<div class=card id=presetCard hidden><h3>Preset switch</h3>
+<p class=muted id=presetHelpGp>Pick a preset on the camera, press Read, and type its ID into a row. Leave the channel on AUTO and flip the switch on your radio to pick it, then drag the range. The preset loads when the white marker is inside the range, only while not recording.</p>
+<p class=muted id=presetHelpDji hidden>Save your resolution/FPS setups on the camera as Custom modes C1&ndash;C5 and add them to the camera's quick-switch (QS) list. In each row type the custom mode number (1&ndash;5 for C1&ndash;C5, 0 for the General mode), pick the channel with AUTO and drag the range. The ESP presses QS for you until the camera reports that mode, only while not recording; REC always takes priority.</p>
+<p><span id=presetNowLabel>Current preset ID</span>: <b id=gpPreset>--</b> <button id=presetRead onclick=gpReadPreset()>Read</button><br><span class=muted>Video mode: <b id=gpMode>--</b></span></p>
+<div id=presetModes></div>
+<button id=addPreset onclick=addPreset()>Add preset</button><button onclick=savePresets()>Save presets</button><span id=presetMsg class=muted></span>
 </div>
 
 <div class=card id=djiCard hidden><h3>DJI Osmo</h3>
@@ -149,7 +152,7 @@ async function copyGoProLog(){el('gpCopy').disabled=true;try{const response=awai
 function cameraLine(c){const link=c.connected?'Connected':'Offline';const ready=c.controlReady?'Control ready':'Control not ready';const rec=c.recording?'RECORDING':'Standby';return `${link} | ${ready} | ${rec}`;}
 function drawDji(c){
   const linked=c.connected&&c.controlReady;el('djiBadge').className='statusBadge '+(linked?'statusOnline':'statusOffline');el('djiBadge').textContent=linked?'Camera connected':'Camera disconnected';
-  let line=c.status||'Offline';if(c.model)line+=' | '+c.model;if(c.batteryPercent>=0)line+=' | Battery '+c.batteryPercent+'%';if(c.mediaRemaining&&c.mediaRemaining!=='--')line+=' | SD '+c.mediaRemaining;if(c.videoMode)line+=' | '+c.videoMode;el('djiSummary').textContent=line;
+  let line=c.status||'Offline';if(c.model)line+=' | '+c.model;if(c.batteryPercent>=0)line+=' | Battery '+c.batteryPercent+'%';if(c.mediaRemaining&&c.mediaRemaining!=='--')line+=' | SD '+c.mediaRemaining;if(c.videoMode)line+=' | '+c.videoMode;if(c.preset!==undefined){el('gpPreset').textContent=c.preset<0?'--':(c.preset?'C'+c.preset:'General');el('gpMode').textContent=c.videoMode||'--';}el('djiSummary').textContent=line;
 }
 async function djiScan(){el('djiScan').disabled=true;el('djiCams').textContent='Scanning...';el('djiMessage').textContent='';try{const x=await api('/api/dji/scan',{method:'POST'});el('djiCams').replaceChildren();if(!x.length){el('djiCams').textContent=' No DJI cameras found';return;}x.forEach(c=>{const b=document.createElement('button');b.textContent=c.name||('DJI '+c.address);b.onclick=()=>djiConnect(c.address,c.type);el('djiCams').appendChild(b);});}catch(e){el('djiMessage').textContent='Scan failed: '+e.message;}finally{el('djiScan').disabled=false;}}
 async function djiConnect(address,type){el('djiMessage').textContent='Connecting...';try{await api('/api/dji/connect',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({address,type}).toString()});el('djiMessage').textContent='Connection queued.';}catch(e){el('djiMessage').textContent='Connect failed: '+e.message;}setTimeout(refresh,500);}
@@ -165,6 +168,8 @@ async function refresh(){
       const blackmagic=s.selectedCamera==='blackmagic';
       el('blackmagicControls').disabled=!blackmagic;el('blackmagicControls').hidden=!blackmagic;el('blackmagicTitle').hidden=!blackmagic;el('blackmagicCard').hidden=!blackmagic;
       el('goproCard').hidden=s.selectedCamera!=='gopro';el('djiCard').hidden=!s.selectedCamera.startsWith('dji');
+      const djiPresets=s.selectedCamera==='dji';el('presetCard').hidden=!(s.selectedCamera==='gopro'||djiPresets);
+      el('presetHelpGp').hidden=djiPresets;el('presetHelpDji').hidden=!djiPresets;el('presetRead').hidden=djiPresets;el('presetNowLabel').textContent=djiPresets?'Current custom mode':'Current preset ID';
       const djiRecording=s.dji&&s.dji.recording;el('saveCamera').disabled=s.camera.recording||s.camera.waitingPin||djiRecording;
     }
     if(s.gopro)drawGoPro(s.gopro);if(s.dji)drawDji(s.dji);
@@ -223,7 +228,7 @@ String WebUi::statusJson(){
     if(dji){
         const CameraState& d=dji->state();
         j.remove(j.length()-1);
-        j += ",\"dji\":{\"status\":\""+d.status+"\",\"model\":\""+d.model+"\",\"connected\":"+String(d.connected?"true":"false")+",\"paired\":"+String(d.paired?"true":"false")+",\"ready\":"+String(d.ready?"true":"false")+",\"controlReady\":"+String(d.controlReady?"true":"false")+",\"recording\":"+String(d.recording?"true":"false")+",\"batteryPercent\":"+String(d.batteryPercent)+",\"mediaRemaining\":\""+d.mediaRemaining+"\",\"videoMode\":\""+d.videoMode+"\",\"incomingPackets\":"+String(d.incomingPackets)+",\"lastIncoming\":\""+d.lastIncoming+"\",\"lastCommand\":\""+d.lastCommand+"\",\"lastWrite\":\""+d.lastWrite+"\"}}";
+        j += ",\"dji\":{\"status\":\""+d.status+"\",\"model\":\""+d.model+"\",\"connected\":"+String(d.connected?"true":"false")+",\"paired\":"+String(d.paired?"true":"false")+",\"ready\":"+String(d.ready?"true":"false")+",\"controlReady\":"+String(d.controlReady?"true":"false")+",\"recording\":"+String(d.recording?"true":"false")+",\"batteryPercent\":"+String(d.batteryPercent)+",\"mediaRemaining\":\""+d.mediaRemaining+"\",\"videoMode\":\""+d.videoMode+"\",\"preset\":"+String((long)dji->currentPreset())+",\"incomingPackets\":"+String(d.incomingPackets)+",\"lastIncoming\":\""+d.lastIncoming+"\",\"lastCommand\":\""+d.lastCommand+"\",\"lastWrite\":\""+d.lastWrite+"\"}}";
     }
     return j;
 }
