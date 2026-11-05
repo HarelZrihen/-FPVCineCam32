@@ -1,6 +1,6 @@
 # FPVCineCam32 v0.13.0
 
-FPVCineCam32 is an ESP32-C3 camera-control interface for FPV systems. It connects supported cameras over Bluetooth and integrates with Betaflight MSP for RC REC/STOP control and DJI/Betaflight OSD status.
+FPVCineCam32 is an ESP32-C3 / ESP32-S3 camera-control interface for FPV systems. It connects supported cameras over Bluetooth and integrates with Betaflight MSP for RC REC/STOP control and DJI/Betaflight OSD status.
 
 **Requires Betaflight 2025.12 or later.**
 
@@ -30,6 +30,16 @@ Other recent GoPro models using the same Open GoPro BLE protocol should be compa
 | GND | GND |
 
 MSP baud: `115200`
+
+### ESP32-S3
+
+ESP32-S3 boards (DevKitC-1, S3 SuperMini/Zero and similar) are supported with the same wiring: GPIO6 is ESP RX and GPIO7 is ESP TX. Build and flash the `esp32s3` PlatformIO environment over the board's native USB port:
+
+```
+pio run -e esp32s3 -t upload
+```
+
+The browser installer currently ships the ESP32-C3 build only.
 
 ## Firmware installer
 
@@ -117,6 +127,8 @@ Custom Message 2 shows battery and remaining recording time, for example:
 ## Setup Wi-Fi
 
 Setup Wi-Fi is temporary. If no client connects during the setup window, Wi-Fi shuts down while BLE camera control, MSP and OSD continue running. Wi-Fi returns after reboot.
+
+Connect to the SoftAP named `FPVCineCam32-XXXX` (XXXX is unique per device) with password `fpvcinecam32`, then browse to `http://192.168.4.1`.
 
 ## Current scope
 

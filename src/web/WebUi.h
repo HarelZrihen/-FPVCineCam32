@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include "../config/Settings.h"
 #include "../camera/BlackmagicCamera.h"
 #include "../camera/GoProCamera.h"
@@ -17,7 +18,7 @@ public:
     void stopWifi();
 private:
     AppSettings& s; SettingsStore& prefs; BlackmagicCamera& cam; MspClient& mspClient;
-    WebServer server; bool running=false;
+    WebServer server; DNSServer dnsServer; bool running=false;
     bool stopRequested=false; uint32_t stopAtMs=0;
     String savedCamera;
     bool restartRequested=false; uint32_t restartAtMs=0;

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include "config/Board.h"
 #include "config/Settings.h"
 #include "msp/MspClient.h"
 #include "camera/BlackmagicCamera.h"
@@ -17,8 +18,8 @@ GoProCamera* gopro = nullptr;
 ICameraBackend* dji = nullptr;  // DJI R SDK (Action 4+) or DUML (Action 2)
 WebUi* web = nullptr;
 
-static constexpr int ESP_RX_PIN = 6;
-static constexpr int ESP_TX_PIN = 7;
+static constexpr int ESP_RX_PIN = FCC_MSP_RX_PIN;
+static constexpr int ESP_TX_PIN = FCC_MSP_TX_PIN;
 static constexpr uint32_t MSP_BAUD = 115200;
 
 static uint32_t lastRcRequest = 0, lastApiRequest = 0, lastOsdUpdate = 0, lastRecordAttempt = 0, lastPresetAttempt = 0, lastPresetPoll = 0;
@@ -144,11 +145,11 @@ void setup() {
     settings = settingsStore.load();
     Serial.printf("[%8lu ms] SETTINGS: autoConnect=%d savedCamera=%s\n", (unsigned long)millis(), settings.autoConnect ? 1 : 0, settings.cameraAddress.c_str());
 
-    // ESP32-C3 SuperMini hardware profile. Keep these fixed so wiring is predictable.
-    diagLog("MSP: begin UART6/7 @115200");
+    // Board profile from config/Board.h. Keep these fixed so wiring is predictable.
+    Serial.printf("[%8lu ms] MSP: begin %s RX=GPIO%d TX=GPIO%d @%lu\n", (unsigned long)millis(), FCC_BOARD_NAME, ESP_RX_PIN, ESP_TX_PIN, (unsigned long)MSP_BAUD);
     msp.begin(ESP_RX_PIN, ESP_TX_PIN, MSP_BAUD);
 
-    // Bring the setup AP up before starting BLE. Wi-Fi and BLE share the C3's
+    // Bring the setup AP up before starting BLE. Wi-Fi and BLE share the chip's
     // 2.4 GHz radio, so giving SoftAP a clean head start makes setup discovery
     // more predictable without changing the proven Blackmagic BLE control path.
     uint64_t mac = ESP.getEfuseMac();
