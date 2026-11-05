@@ -289,8 +289,8 @@ void loop() {
             // Use the same two operator-facing OSD slots as GoPro.
             msp.setCustomText(0,djiStatusText(state));
             msp.setCustomText(1,djiMediaText(state));
-            // Custom Message 3: video mode when the camera reports it (Osmo Nano).
-            if(state.videoMode.length())msp.setCustomText(2,state.videoMode);
+            // Custom Message 3: video mode when the camera reports it (blank otherwise).
+            msp.setCustomText(2,state.videoMode);
         }else{
         msp.setCustomText(settings.osdSlot, osdStatusText());
         // The next Custom Message slot carries decoded Pocket 4K remaining

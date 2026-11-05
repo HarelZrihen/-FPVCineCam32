@@ -1,4 +1,5 @@
 #include "DjiAction2Camera.h"
+#include "DjiVideoFormats.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -20,15 +21,6 @@ static constexpr uint8_t DJI_MFR_NANO=0x19;  // model byte in DJI manufacturer d
 static const char NANO_VIDEO_PARAM[]="cam_video_param_v2";  // [resolution idx][fps idx]...
 static uint16_t le16(const uint8_t*p){return (uint16_t)(p[0]|(p[1]<<8));}
 static uint32_t le32(const uint8_t*p){return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
-static const char* nanoResolution(uint8_t i){
-    switch(i){case 10:return "1080P";case 12:return "1080P 4:3";case 16:return "4K";case 45:return "2.7K";case 66:return "1080P 9:16";
-    case 67:return "2.7K 9:16";case 95:return "2.7K 4:3";case 103:return "4K 4:3";case 105:return "1080P 1:1";case 106:return "2160P 1:1";
-    case 107:return "3K 1:1";case 108:return "3K 9:16";case 109:return "4K 9:16";case 125:return "4K OPEN";default:return "";}
-}
-static int nanoFps(uint8_t i){
-    switch(i){case 1:return 24;case 2:return 25;case 3:return 30;case 4:return 48;case 5:return 50;case 6:return 60;case 7:return 120;
-    case 8:return 240;case 10:return 100;case 11:return 96;case 19:return 200;case 29:return 15;default:return 0;}
-}
 static constexpr uint8_t REC_IDLE=0x01,REC_ACTIVE=0x81,REC_SAVING=0xC1;
 
 DjiAction2Camera::DjiAction2Camera(bool osmoNano):callbacks(this),nano(osmoNano){instance=this;}
@@ -111,11 +103,11 @@ void DjiAction2Camera::handleFrame(const uint8_t*f,size_t len){
         camState.recording=p[1]==REC_ACTIVE;camState.status=p[1]==REC_ACTIVE?"DJI REC":(p[1]==REC_SAVING?"DJI SAVING":"DJI READY");return;
     }
     if(flags==0xC0&&set==0x0D&&id==0x02&&n>=22&&p[0]==0x00&&p[21]<=100){camState.batteryPercent=p[21];return;}
+    if((flags&0x80)==0&&set==0x00&&id==0x99&&f[4]==PARAMS){handleParam(p,n);return;}  // both models
     if(!nano)return;
     // Nano pushes (no status byte in front of the data).
     if((flags&0x80)==0&&set==0x02&&id==0x80&&n>=33){handleNanoState(p,n);return;}
     if((flags&0x80)==0&&set==0x0D&&id==0x02&&n>=21&&p[20]<=100){camState.batteryPercent=p[20];return;}
-    if((flags&0x80)==0&&set==0x00&&id==0x99&&f[4]==PARAMS){handleParam(p,n);return;}
 }
 
 void DjiAction2Camera::handleNanoState(const uint8_t*p,size_t n){
@@ -135,9 +127,8 @@ void DjiAction2Camera::handleParam(const uint8_t*p,size_t n){
     const size_t nameLen=le16(p+13),vOff=15+nameLen+6;if(vOff+2>n)return;
     const size_t vLen=le16(p+vOff);if(vOff+2+vLen>n||vLen<2)return;
     if(nameLen!=strlen(NANO_VIDEO_PARAM)||memcmp(p+15,NANO_VIDEO_PARAM,nameLen)!=0)return;
-    const uint8_t*v=p+vOff+2;const char*res=nanoResolution(v[0]);const int fps=nanoFps(v[1]);
-    String m=res;if(fps){if(m.length())m+=' ';m+=String(fps);}
-    if(m!=camState.videoMode){camState.videoMode=m;log("Nano video mode %s (res=%u fps=%u)",m.c_str(),v[0],v[1]);}
+    const uint8_t*v=p+vOff+2;const String m=djiformat::videoText(v[0],v[1]);
+    if(m!=camState.videoMode){camState.videoMode=m;log("Video mode %s (res=%u fps=%u)",m.c_str(),v[0],v[1]);}
 }
 
 void DjiAction2Camera::subscribeParam(const char*name){
@@ -170,7 +161,10 @@ void DjiAction2Camera::loop(){
     if(pinPending&&(int32_t)(now-pinAtMs)>=0){pinPending=false;sendPairingPin();}
     if(nanoInitPending&&!pinPending&&(int32_t)(now-nanoInitAtMs)>=0){nanoInitPending=false;sendNanoInit();}
     if(approvalAckPending){approvalAckPending=false;const uint8_t ok=0x01;sendFrame(WIFI,0xC0,0x07,0x46,&ok,1,approvalSeq);sessionReady=true;log("PAIR approved on camera");}
-    if(sessionReady&&!camState.controlReady){camState.paired=camState.ready=camState.controlReady=true;camState.status="DJI READY";lastPollMs=now;}
+    if(sessionReady&&!camState.controlReady){camState.paired=camState.ready=camState.controlReady=true;camState.status="DJI READY";lastPollMs=now;
+        // EXPERIMENTAL on Action 2: ask for the same video-format parameter the Nano pushes.
+        // Unverified on Action 2 hardware; if the camera ignores it the video mode stays empty.
+        if(!nano){subscribeParam(NANO_VIDEO_PARAM);log("Action 2: video mode subscription sent (experimental)");}}
     if(camState.connected&&!camState.controlReady&&now-authStartMs>=30000){log("PAIR timeout");client->disconnect();}
     if(camState.controlReady){
         if(now-lastRxMs>=15000){log("No camera traffic for 15 s, reconnecting");client->disconnect();}

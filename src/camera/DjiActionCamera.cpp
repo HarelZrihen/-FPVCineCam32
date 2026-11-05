@@ -1,4 +1,5 @@
 #include "DjiActionCamera.h"
+#include "DjiVideoFormats.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -91,10 +92,28 @@ void DjiActionCamera::handleFrame(const uint8_t*f,size_t len){
         }
         return;
     }
-    if(set==0x1D&&id==0x02&&(type&0x20)==0&&n>=38){uint8_t mode=p[0],status=p[1];uint16_t recordTime=read16(p+5);bool videoMode=(mode==0x00||mode==0x01||mode==0x02||mode==0x0A||mode==0x28||mode==0x38||mode==0x3A||mode==0x41||mode==0x43||mode==0x44||mode==0x4A);camState.recording=videoMode&&status==0x03&&(recordTime>0||mode!=0x05);remainingSeconds=read32(p+23);char t[24];snprintf(t,sizeof(t),"%luH:%02lu",(unsigned long)(remainingSeconds/3600),(unsigned long)((remainingSeconds%3600)/60));camState.mediaRemaining=t;camState.batteryPercent=p[37];camState.ready=true;camState.controlReady=true;camState.status=camState.recording?"DJI REC":"DJI READY";return;}
+    if(set==0x1D&&id==0x02&&(type&0x20)==0&&n>=38){uint8_t mode=p[0],status=p[1];uint16_t recordTime=read16(p+5);bool videoMode=(mode==0x00||mode==0x01||mode==0x02||mode==0x0A||mode==0x28||mode==0x38||mode==0x3A||mode==0x41||mode==0x43||mode==0x44||mode==0x4A);camState.recording=videoMode&&status==0x03&&(recordTime>0||mode!=0x05);remainingSeconds=read32(p+23);char t[24];snprintf(t,sizeof(t),"%luH:%02lu",(unsigned long)(remainingSeconds/3600),(unsigned long)((remainingSeconds%3600)/60));camState.mediaRemaining=t;camState.batteryPercent=p[37];camState.ready=true;camState.controlReady=true;camState.status=camState.recording?"DJI REC":"DJI READY";updateVideoMode(mode,p[2],p[3],p[4]);return;}
     if(set==0x1D&&id==0x03&&(type&0x20)&&n>=1)camState.lastWrite=p[0]==0?"DJI RECORD ACK OK":"DJI RECORD ACK FAIL";
 }
 
+// Video mode from the 1D02 status push: camera_mode (0), video_resolution (2), fps_idx (3), EIS_mode (4).
+void DjiActionCamera::updateVideoMode(uint8_t mode,uint8_t res,uint8_t fps,uint8_t eis){
+    static const char* eisNames[]={"","RS","HS","RS+","HB"};
+    const char* e=eis<5?eisNames[eis]:"";
+    String m;
+    switch(mode){
+    case 0x01:case 0x28:{  // Video, SuperNight
+        m=djiformat::videoText(res,fps);if(mode==0x28)m="NIGHT "+m;if(*e){m+=' ';m+=e;}break;}
+    case 0x00:{  // Slow motion: fps_idx is the multiplier
+        m=djiformat::resolution(res);if(m.length())m+=' ';m+="SLOMO "+String(fps)+"X";break;}
+    case 0x02:m="TIMELAPSE";break;
+    case 0x0A:m="HYPERLAPSE";break;
+    case 0x05:m="PHOTO";break;
+    default:m="";break;  // Osmo 360 modes (> 0x34) report their name in 1D06, not decoded here
+    }
+    m.trim();
+    if(m!=camState.videoMode){camState.videoMode=m;Serial.printf("[DJI] Video mode %s (mode=0x%02X res=%u fps=%u eis=%u)\n",m.c_str(),mode,res,fps,eis);}
+}
 bool DjiActionCamera::setRecording(bool on){if(!camState.controlReady)return false;uint8_t p[9]{};p[0]=cameraDeviceId&0xFF;p[1]=cameraDeviceId>>8;p[2]=cameraDeviceId>>16;p[3]=cameraDeviceId>>24;p[4]=on?0:1;camState.lastCommand=on?"REC":"STOP";camState.lastWrite=sendFrame(0x1D,0x03,0x02,p,sizeof(p))?"sent":"failed";return camState.lastWrite=="sent";}
 void DjiActionCamera::loop(){
     if(pendingConnectionResponse){
@@ -106,4 +125,4 @@ void DjiActionCamera::loop(){
 void DjiActionCamera::disconnect(){reconnectWanted=false;if(client&&client->isConnected())client->disconnect();}
 void DjiActionCamera::forgetPairing(){disconnect();prefs.remove("address");prefs.remove("type");prefs.remove("approved");savedAddress="";approvedBefore=false;pendingConnectionResponse=false;camState=CameraState{};camState.status="DJI OFFLINE";camState.model="DJI Osmo";camState.protocolVersion="DJI R SDK";log("DJI saved target cleared; unrelated BLE bonds untouched");}
 void DjiActionCamera::ClientCallbacks::onConnect(NimBLEClient*){o->camState.connected=true;o->camState.status="DJI BLE LINK";}
-void DjiActionCamera::ClientCallbacks::onDisconnect(NimBLEClient*,int r){o->pendingConnectionResponse=false;o->camState.connected=false;o->camState.controlReady=false;o->camState.ready=false;o->camState.recording=false;o->camState.status="DJI OFFLINE";o->log("BLE disconnected reason=%d",r);if(o->savedAddress.length()){o->reconnectWanted=true;o->nextReconnectMs=millis()+3000;}}
+void DjiActionCamera::ClientCallbacks::onDisconnect(NimBLEClient*,int r){o->pendingConnectionResponse=false;o->camState.videoMode="";o->camState.connected=false;o->camState.controlReady=false;o->camState.ready=false;o->camState.recording=false;o->camState.status="DJI OFFLINE";o->log("BLE disconnected reason=%d",r);if(o->savedAddress.length()){o->reconnectWanted=true;o->nextReconnectMs=millis()+3000;}}
